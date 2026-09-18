@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MRO Composite - Cutting Plane App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        h1 { color: #2c3e50; }
+        .container { display: flex; gap: 20px; }
+        .controls { width: 300px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .canvas-area { flex-grow: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); overflow: auto;}
+        label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px;}
+        select, input, button { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;}
+        button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 20px;}
+        button:hover { background-color: #3498db; }
+        
+        /* Skala untuk menggambar kotak raw material (1mm = 0.25px agar muat di layar laptop) */
+        #raw-material-board {
+            width: 914.5px; /* 3658 * 0.25 */
+            height: 457.25px; /* 1829 * 0.25 */
+            background-color: #e0e0e0;
+            border: 2px solid #7f8c8d;
+            position: relative;
+            margin-top: 20px;
+        }
+        
+        .part-box {
+            position: absolute;
+            background-color: #3498db;
+            border: 1px solid #2980b9;
+            color: white;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Aero Composite - Cutting Plane Optimizer</h1>
+    <p>Aplikasi web untuk mengoptimalkan pemotongan Raw Material Cargo Floor pesawat.</p>
+
+    <div class="container">
+        <!-- Panel Kontrol Kiri -->
+        <div class="controls">
+            <h3>Input Produksi</h3>
+            
+            <label for="raw-material">Pilih Raw Material:</label>
+            <select id="raw-material">
+                <option value="4223">Gillfab 4223/4523 (3658 mm x 1829 mm)</option>
+            </select>
+
+            <label for="part-select">Pilih FIN Number (Cargo Floor):</label>
+            <select id="part-select">
+                <option value="">-- Pilih Part --</option>
+                <option value="151BF">151BF (1204 x 375.5 mm)</option>
+                <option value="151AF">151AF (1756 x 1411 mm)</option>
+                <option value="152BF">152BF (1204 x 375.5 mm)</option>
+            </select>
+
+            <button onclick="addPart()">Tambahkan ke Daftar</button>
+
+            <h4>Daftar Potong:</h4>
+            <ul id="cut-list"></ul>
+
+            <button style="background-color: #27ae60;" onclick="simulateCutting()">Hitung & Visualisasikan Posisi</button>
+        </div>
+
+        <!-- Area Visualisasi Kanan -->
+        <div class="canvas-area">
+            <h3>Visualisasi Pemotongan (Skala)</h3>
+            <p>Ukuran Material: 3658 mm x 1829 mm</p>
+            <div id="raw-material-board">
+                <!-- Gambar potongan part akan muncul di sini secara dinamis -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Database sementara
+        const partsDatabase = {
+            "151BF": { length: 1204, width: 375.5 },
+            "151AF": { length: 1756, width: 1411 },
+            "152BF": { length: 1204, width: 375.5 }
+        };
+
+        let selectedParts = [];
+
+        function addPart() {
+            const partFin = document.getElementById("part-select").value;
+            if (partFin === "") return alert("Pilih part terlebih dahulu!");
+            
+            selectedParts.push(partFin);
+            
+            // Tampilkan di daftar (UI)
+            const li = document.createElement("li");
+            li.textContent = partFin + " (" + partsDatabase[partFin].length + "x" + partsDatabase[partFin].width + " mm)";
+            document.getElementById("cut-list").appendChild(li);
+        }
+
+        // Tahap 2: Logika Dasar untuk menggambar kotak ke kanvas
+        function simulateCutting() {
+            const board = document.getElementById("raw-material-board");
+            board.innerHTML = ""; // Bersihkan papan jika ada kalkulasi sebelumnya
+            
+            const scale = 0.25; // Skala 1 mm = 0.25 pixel di layar
+            let currentX = 0;
+            let currentY = 0;
+            let maxRowHeight = 0;
+
+            // Algoritma Susun Sederhana 
+            selectedParts.forEach(partFin => {
+                const part = partsDatabase[partFin];
+                const w = part.length * scale;
+                const h = part.width * scale;
+
+                // Jika kotak melebihi batas kanan material, letakkan di baris bawahnya
+                if (currentX + w > (3658 * scale)) {
+                    currentX = 0;
+                    currentY += maxRowHeight;
+                    maxRowHeight = 0;
+                }
+
+                // Buat elemen gambar kotak part
+                const box = document.createElement("div");
+                box.className = "part-box";
+                box.style.width = w + "px";
+                box.style.height = h + "px";
+                box.style.left = currentX + "px";
+                box.style.top = currentY + "px";
+                box.innerHTML = partFin;
+
+                board.appendChild(box);
+
+                // Perbarui posisi koordinat untuk kotak part selanjutnya
+                currentX += w;
+                if (h > maxRowHeight) maxRowHeight = h;
+            });
+            
+            alert("Visualisasi selesai! Catatan: Ini baru cara susun lurus, fitur memutar part (rotate) dan rekomendasi sisa potongan akan masuk di update selanjutnya.");
+        }
+    </script>
+</body>
+</html>
