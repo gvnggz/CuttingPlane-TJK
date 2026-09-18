@@ -42,7 +42,7 @@
             overflow: auto;
         }
         label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; font-size: 13px; color: #cfcfcf;}
-        select, input, button { 
+        input, button { 
             width: 100%; 
             padding: 9px; 
             margin-bottom: 10px; 
@@ -53,7 +53,7 @@
             color: #ffffff;
             font-size: 13px;
         }
-        select:focus, input:focus { border-color: #3498db; outline: none; }
+        input:focus { border-color: #3498db; outline: none; }
         button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 15px;}
         button:hover { background-color: #3498db; }
         
@@ -76,7 +76,7 @@
 
         .actual-part {
             background-color: #2980b9;
-            border: 1px solid #3498db;
+            border: 1px solid #2980b9;
             color: white;
             font-size: 10px;
             display: flex;
@@ -116,18 +116,20 @@
             <h3>Production Input</h3>
             <p style="font-size:12px; color:#f39c12; font-weight:bold;" id="status-koneksi">Synchronizing with Google Sheets...</p>
             
-            <label for="raw-material">1. Select Raw Material:</label>
-            <select id="raw-material" onchange="updateBoardSize()">
-                <option value="">-- Loading data... --</option>
-            </select>
+            <label for="raw-material-input">1. Select Raw Material (Type to search):</label>
+            <input type="text" id="raw-material-input" list="raw-materials-list" placeholder="Type material name..." onchange="updateBoardSize()">
+            <datalist id="raw-materials-list">
+                <!-- Data loaded dynamically -->
+            </datalist>
 
             <label for="margin-input">2. Cutting Tolerance / Overlap (mm):</label>
             <input type="number" id="margin-input" value="20" min="0">
 
-            <label for="part-select">3. Select Cargo Floor (FIN):</label>
-            <select id="part-select">
-                <option value="">-- Loading data... --</option>
-            </select>
+            <label for="part-input">3. Select Cargo Floor (Type FIN):</label>
+            <input type="text" id="part-input" list="parts-list" placeholder="Type FIN number (e.g. 131BF)...">
+            <datalist id="parts-list">
+                <!-- Data loaded dynamically -->
+            </datalist>
 
             <button onclick="addPart()">+ Add to Cut List</button>
             <button onclick="clearList()" style="background-color: #c0392b; margin-top: 5px;">Clear List</button>
@@ -169,8 +171,8 @@
                 const csvMat = await resMat.text();
                 const matData = parseCSV(csvMat);
                 
-                const matSelect = document.getElementById("raw-material");
-                matSelect.innerHTML = '<option value="">-- Select Raw Material --</option>';
+                const matList = document.getElementById("raw-materials-list");
+                matList.innerHTML = '';
                 
                 for (let i = 1; i < matData.length; i++) {
                     if(matData[i].length < 3) continue;
@@ -180,7 +182,7 @@
                     
                     if(name) {
                         materialsDatabase[name] = { length, width };
-                        matSelect.innerHTML += `<option value="${name}">${name} (${length} x ${width} mm)</option>`;
+                        matList.innerHTML += `<option value="${name} (${length} x ${width} mm)">`;
                     }
                 }
 
@@ -188,8 +190,8 @@
                 const csvCargo = await resCargo.text();
                 const cargoData = parseCSV(csvCargo);
                 
-                const cargoSelect = document.getElementById("part-select");
-                cargoSelect.innerHTML = '<option value="">-- Select Part --</option>';
+                const cargoList = document.getElementById("parts-list");
+                cargoList.innerHTML = '';
                 
                 for (let i = 1; i < cargoData.length; i++) {
                     if(cargoData[i].length < 5) continue;
@@ -199,7 +201,7 @@
                     
                     if(fin && !isNaN(length) && !isNaN(width)) {
                         partsDatabase[fin] = { length, width };
-                        cargoSelect.innerHTML += `<option value="${fin}">${fin} (${length} x ${width} mm)</option>`;
+                        cargoList.innerHTML += `<option value="${fin} (${length} x ${width} mm)">`;
                     }
                 }
 
@@ -213,15 +215,17 @@
         }
 
         function updateBoardSize() {
-            const matName = document.getElementById("raw-material").value;
+            const matInputValue = document.getElementById("raw-material-input").value;
+            const matName = matInputValue.split(" (")[0].trim(); // Ambil nama material saja
+            
             const board = document.getElementById("raw-material-board");
             const info = document.getElementById("board-info");
             document.getElementById("recommendation-box").style.display = "none";
             
-            if(!matName) {
+            if(!matName || !materialsDatabase[matName]) {
                 board.style.width = "0px";
                 board.style.height = "0px";
-                info.innerText = "Please select a raw material first.";
+                info.innerText = "Please select a valid raw material.";
                 return;
             }
 
@@ -233,12 +237,20 @@
         }
 
         function addPart() {
-            const partFin = document.getElementById("part-select").value;
-            if (partFin === "") return alert("Please select a part first!");
+            const partInputValue = document.getElementById("part-input").value;
+            const partFin = partInputValue.split(" (")[0].trim(); // Ambil FIN number saja
+            
+            if (!partFin || !partsDatabase[partFin]) {
+                return alert("Please select a valid Cargo Floor FIN from the list!");
+            }
+            
             selectedParts.push(partFin);
             const li = document.createElement("li");
             li.textContent = partFin + " (" + partsDatabase[partFin].length + "x" + partsDatabase[partFin].width + " mm)";
             document.getElementById("cut-list").appendChild(li);
+            
+            // Kosongkan input setelah ditambah
+            document.getElementById("part-input").value = "";
         }
 
         function clearList() {
@@ -249,8 +261,10 @@
         }
 
         function simulateCutting() {
-            const matName = document.getElementById("raw-material").value;
-            if(!matName) return alert("Please select raw material first!");
+            const matInputValue = document.getElementById("raw-material-input").value;
+            const matName = matInputValue.split(" (")[0].trim();
+            
+            if(!matName || !materialsDatabase[matName]) return alert("Please select raw material first!");
             if(selectedParts.length === 0) return alert("Please add at least 1 part!");
 
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
@@ -370,7 +384,7 @@
                 offcutArea.style.left = off.x + "px";
                 offcutArea.style.top = off.y + "px";
                 offcutArea.style.display = "flex";
-                offcutArea.style.alignItems = "center";
+                offcutArea.style.alignItems, "center";
                 offcutArea.style.justifyContent = "center";
                 offcutArea.style.color = "#2ecc71";
                 offcutArea.style.fontSize = "11px";
