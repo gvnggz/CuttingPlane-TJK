@@ -57,6 +57,15 @@
         button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 15px;}
         button:hover { background-color: #3498db; }
         
+        .custom-box {
+            background: #252525;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px dashed #555;
+            margin-top: 8px;
+            display: none;
+        }
+
         #raw-material-board {
             background-color: #2b2b2b;
             border: 2px solid #555;
@@ -116,11 +125,19 @@
             <h3>Production Input</h3>
             <p style="font-size:12px; color:#f39c12; font-weight:bold;" id="status-koneksi">Synchronizing with Google Sheets...</p>
             
-            <label for="raw-material-input">1. Select Raw Material (Type to search):</label>
-            <input type="text" id="raw-material-input" list="raw-materials-list" placeholder="Type material name..." onchange="updateBoardSize()">
+            <label for="raw-material-input">1. Select Raw Material:</label>
+            <input type="text" id="raw-material-input" list="raw-materials-list" placeholder="Type material or Custom..." onchange="checkCustomMaterial()">
             <datalist id="raw-materials-list">
                 <!-- Data loaded dynamically -->
             </datalist>
+
+            <!-- Kotak Input Custom Manual (Muncul jika pilih Custom) -->
+            <div id="custom-material-inputs" class="custom-box">
+                <label style="margin-top:0;">Custom Length (mm):</label>
+                <input type="number" id="custom-length" placeholder="e.g. 2000" oninput="updateBoardSize()">
+                <label>Custom Width (mm):</label>
+                <input type="number" id="custom-width" placeholder="e.g. 1500" oninput="updateBoardSize()">
+            </div>
 
             <label for="margin-input">2. Cutting Tolerance / Overlap (mm):</label>
             <input type="number" id="margin-input" value="20" min="0">
@@ -172,7 +189,7 @@
                 const matData = parseCSV(csvMat);
                 
                 const matList = document.getElementById("raw-materials-list");
-                matList.innerHTML = '';
+                matList.innerHTML = '<option value="[Custom / Offcut Size]">';
                 
                 for (let i = 1; i < matData.length; i++) {
                     if(matData[i].length < 3) continue;
@@ -214,31 +231,56 @@
             }
         }
 
-        function updateBoardSize() {
-            const matInputValue = document.getElementById("raw-material-input").value;
-            const matName = matInputValue.split(" (")[0].trim(); // Ambil nama material saja
+        function checkCustomMaterial() {
+            const val = document.getElementById("raw-material-input").value;
+            const customBox = document.getElementById("custom-material-inputs");
             
+            if (val.includes("Custom")) {
+                customBox.style.display = "block";
+            } else {
+                customBox.style.display = "none";
+                updateBoardSize();
+            }
+        }
+
+        function getActiveMaterialDimensions() {
+            const val = document.getElementById("raw-material-input").value;
+            if (val.includes("Custom")) {
+                let l = parseFloat(document.getElementById("custom-length").value) || 0;
+                let w = parseFloat(document.getElementById("custom-width").value) || 0;
+                return { name: "Custom Offcut", length: l, width: w };
+            } else {
+                let matName = val.split(" (")[0].trim();
+                if (materialsDatabase[matName]) {
+                    return { name: matName, length: materialsDatabase[matName].length, width: materialsDatabase[matName].width };
+                }
+            }
+            return null;
+        }
+
+        function updateBoardSize() {
             const board = document.getElementById("raw-material-board");
             const info = document.getElementById("board-info");
             document.getElementById("recommendation-box").style.display = "none";
             
-            if(!matName || !materialsDatabase[matName]) {
+            const mat = getActiveMaterialDimensions();
+            
+            if(!mat || mat.length <= 0 || mat.width <= 0) {
                 board.style.width = "0px";
                 board.style.height = "0px";
-                info.innerText = "Please select a valid raw material.";
+                info.innerText = "Please select or input valid raw material dimensions.";
                 return;
             }
 
-            const mat = materialsDatabase[matName];
             board.style.width = (mat.length * scale) + "px";
             board.style.height = (mat.width * scale) + "px";
-            info.innerHTML = `<strong>${matName}</strong> (Length: ${mat.length} mm x Width: ${mat.width} mm)`;
+            info.innerHTML = `<strong>${mat.name}</strong> (Length: ${mat.length} mm x Width: ${mat.width} mm)`;
             board.innerHTML = ""; 
         }
 
         function addPart() {
             const partInputValue = document.getElementById("part-input").value;
-            const partFin = partInputValue.split(" (")[0].trim(); // Ambil FIN number saja
+            const partFin = partInputValue.split(" (")[0].trim();
             
             if (!partFin || !partsDatabase[partFin]) {
                 return alert("Please select a valid Cargo Floor FIN from the list!");
@@ -248,8 +290,6 @@
             const li = document.createElement("li");
             li.textContent = partFin + " (" + partsDatabase[partFin].length + "x" + partsDatabase[partFin].width + " mm)";
             document.getElementById("cut-list").appendChild(li);
-            
-            // Kosongkan input setelah ditambah
             document.getElementById("part-input").value = "";
         }
 
@@ -261,10 +301,8 @@
         }
 
         function simulateCutting() {
-            const matInputValue = document.getElementById("raw-material-input").value;
-            const matName = matInputValue.split(" (")[0].trim();
-            
-            if(!matName || !materialsDatabase[matName]) return alert("Please select raw material first!");
+            const mat = getActiveMaterialDimensions();
+            if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions first!");
             if(selectedParts.length === 0) return alert("Please add at least 1 part!");
 
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
@@ -275,8 +313,8 @@
             recBox.innerHTML = "";
             recBox.style.display = "none";
             
-            const matLength = materialsDatabase[matName].length;
-            const matWidth = materialsDatabase[matName].width;
+            const matLength = mat.length;
+            const matWidth = mat.width;
             
             let currentX = 0;
             let currentY = 0;
@@ -384,7 +422,7 @@
                 offcutArea.style.left = off.x + "px";
                 offcutArea.style.top = off.y + "px";
                 offcutArea.style.display = "flex";
-                offcutArea.style.alignItems, "center";
+                offcutArea.style.alignItems = "center";
                 offcutArea.style.justifyContent = "center";
                 offcutArea.style.color = "#2ecc71";
                 offcutArea.style.fontSize = "11px";
