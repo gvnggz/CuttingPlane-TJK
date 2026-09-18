@@ -450,6 +450,7 @@
             return sheets;
         }
 
+        // --- SMART OPTIMIZATION DENGAN LIVE TIMER ---
         function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
@@ -587,7 +588,7 @@
 
                 // Filter free spaces yang valid di dalam batas sheet
                 let validOffcuts = sheet.freeSpaces.filter(sp => {
-                    return sp.w >= 150 && sp.h >= 150 && 
+                    return sp.w >= 100 && sp.h >= 100 && 
                            sp.x >= 0 && sp.y >= 0 && 
                            (sp.x + sp.w) <= boardMaxW && 
                            (sp.y + sp.h) <= boardMaxH &&
@@ -599,32 +600,45 @@
                 let totalUsableAreaMm2 = 0;
 
                 if (validOffcuts.length > 0) {
-                    // AKUMULASI TOTAL LUAS DARI SEMUA KOTAK SISA YANG VALID (TERMASUK AREA X)
-                    let primaryOffcut = validOffcuts[0]; // Kotak utama terbesar untuk visual
-                    let mainRealW = primaryOffcut.w / scale;
-                    let mainRealH = primaryOffcut.h / scale;
+                    // Cari batas minimum Y (posisi vertikal paling atas dari ruang sisa) dan batas maksimum X di kanan
+                    let minY = boardMaxH;
+                    let maxX = boardMaxW;
 
                     validOffcuts.forEach(sp => {
+                        if (sp.y < minY) minY = sp.y;
                         let rw = sp.w / scale;
                         let rh = sp.h / scale;
                         totalUsableAreaMm2 += (rw * rh);
                     });
 
-                    // Pastikan total area tidak melebihi sisa mutlak sheet (total area - used area)
                     let maxPossibleRemaining = totalSheetArea - usedArea;
                     if (totalUsableAreaMm2 > maxPossibleRemaining) {
                         totalUsableAreaMm2 = maxPossibleRemaining;
                     }
 
-                    // Render SATU KOTAK HIJAU UTAMA yang bersih untuk representasi visual
+                    // Tentukan lebar visual kotak hijau utama secara presisi agar tidak keluar batas sheet di sebelah kanan
+                    let visualWidth = boardMaxW;
+                    let rightmostPartX = 0;
+                    sheet.parts.forEach(p => {
+                        let rightEdge = p.x + p.w;
+                        if (rightEdge > rightmostPartX) rightmostPartX = rightEdge;
+                    });
+                    
+                    // Jika ada ruang di sebelah kanan part tertinggi/terluar, sesuaikan lebar visual kotak hijau
+                    let visualX = 0;
+                    let visualY = minY;
+                    let visualH = boardMaxH - visualY;
+                    let visualW = boardMaxW;
+
+                    // Pastikan kotak hijau visual utama digambar presisi tanpa keluar batas
                     const offcutArea = document.createElement("div");
                     offcutArea.style.position = "absolute";
                     offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
                     offcutArea.style.border = "2px dashed #27ae60";
-                    offcutArea.style.width = primaryOffcut.w + "px";
-                    offcutArea.style.height = primaryOffcut.h + "px";
-                    offcutArea.style.left = primaryOffcut.x + "px";
-                    offcutArea.style.top = primaryOffcut.y + "px";
+                    offcutArea.style.width = visualW + "px";
+                    offcutArea.style.height = visualH + "px";
+                    offcutArea.style.left = visualX + "px";
+                    offcutArea.style.top = visualY + "px";
                     offcutArea.style.display = "flex";
                     offcutArea.style.alignItems = "center";
                     offcutArea.style.justifyContent = "center";
