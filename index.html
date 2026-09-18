@@ -316,20 +316,19 @@
             document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
+        // --- IMPROVED SKYLINE / BOTTOM-LEFT NESTING ALGORITHM ---
         function runNestingSimulation(partsList, matLength, matWidth, margin) {
             let unplaced = [...partsList];
             let sheets = [];
+            let maxSheetLimit = 25;
 
-            while (unplaced.length > 0 && sheets.length < 25) {
+            while (unplaced.length > 0 && sheets.length < maxSheetLimit) {
                 let currentSheetParts = [];
                 let nextUnplaced = [];
                 
-                let currentX = 0;
-                let currentY = 0;
-                let maxRowHeight = 0;
-                let rowsInfo = [];
-                let currentRowMaxHeight = 0;
-                let startRowY = 0;
+                // Representasi skyline (kumpulan segmen horizontal bebas di dalam sheet)
+                // Setiap segmen mendefinisikan area kosong: {x, y, w, h}
+                let freeSpaces = [{ x: 0, y: 0, w: matLength * scale, h: matWidth * scale }];
 
                 for (let i = 0; i < unplaced.length; i++) {
                     const partFin = unplaced[i];
@@ -337,50 +336,76 @@
                     
                     let effL = part.length + margin;
                     let effW = part.width + margin;
-                    let w = effL * scale;
-                    let h = effW * scale;
-                    let isRotated = false;
-                    let canFit = false;
+                    let w1 = effL * scale;
+                    let h1 = effW * scale;
+                    let w2 = h1; // Varian rotasi 90 derajat
+                    let h2 = w1;
 
-                    if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
-                        canFit = true;
-                    } 
-                    else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
-                        let tempW = w; w = h; h = tempW;
-                        let tempL = effL; effL = effW; effW = tempL;
-                        isRotated = true;
-                        canFit = true;
-                    } 
-                    else {
-                        rowsInfo.push({ y: startRowY, height: currentRowMaxHeight, rightEdge: currentX });
-                        currentX = 0;
-                        currentY += maxRowHeight;
-                        startRowY = currentY;
-                        maxRowHeight = 0;
-                        currentRowMaxHeight = 0;
+                    let placed = false;
+                    let bestSpaceIdx = -1;
+                    let useRotation = false;
+                    let chosenW = 0, chosenH = 0;
 
-                        if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
-                            canFit = true;
-                        } else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
-                            let tempW = w; w = h; h = tempW;
-                            let tempL = effL; effL = effW; effW = tempL;
-                            isRotated = true;
-                            canFit = true;
+                    // Cari ruang kosong (free space) terbaik yang muat menggunakan pendekatan Bottom-Left
+                    for (let s = 0; s < freeSpaces.length; s++) {
+                        let space = freeSpaces[s];
+                        
+                        // Cek posisi normal (w1, h1)
+                        if (space.w >= w1 && space.h >= h1) {
+                            bestSpaceIdx = s;
+                            useRotation = false;
+                            chosenW = w1;
+                            chosenH = h1;
+                            break; // Ambil ruang pertama yang muat (Bottom-Left)
+                        }
+                        // Cek posisi rotasi 90 derajat (w2, h2)
+                        else if (space.w >= w2 && space.h >= h2) {
+                            bestSpaceIdx = s;
+                            useRotation = true;
+                            chosenW = w2;
+                            chosenH = h2;
+                            break;
                         }
                     }
 
-                    if (canFit) {
-                        currentSheetParts.push({ fin: partFin, x: currentX, y: currentY, w: w, h: h, isRotated: isRotated });
-                        currentX += w;
-                        if (h > maxRowHeight) maxRowHeight = h;
-                        currentRowMaxHeight = Math.max(currentRowMaxHeight, h);
-                    } else {
+                    if (bestSpaceIdx !== -1) {
+                        let space = freeSpaces[bestSpaceIdx];
+                        let posX = space.x;
+                        let posY = space.y;
+
+                        currentSheetParts.push({
+                            fin: partFin,
+                            x: posX,
+                            y: posY,
+                            w: chosenW,
+                            h: chosenH,
+                            isRotated: useRotation
+                        });
+
+                        // Pecah ruang kosong yang tersisa (Guillotine Split) akibat penempatan part baru
+                        freeSpaces.splice(bestSpaceIdx, 1);
+
+                        // Buat ruang sisa di sebelah kanan part
+                        let rightWidth = space.w - chosenW;
+                        if (rightWidth > 0) {
+                            freeSpaces.push({ x: posX + chosenW, y: posY, w: rightWidth, h: chosenH });
+                        }
+
+                        // Buat ruang sisa di bagian bawah part
+                        let bottomHeight = space.h - chosenH;
+                        if (bottomHeight > 0) {
+                            freeSpaces.push({ x: posX, y: posY + chosenH, w: space.w, h: bottomHeight });
+                        }
+
+                        placed = true;
+                    }
+
+                    if (!placed) {
                         nextUnplaced.push(partFin);
                     }
                 }
-                rowsInfo.push({ y: startRowY, height: maxRowHeight, rightEdge: currentX });
-                
-                sheets.push({ parts: currentSheetParts, rows: rowsInfo, usedHeight: currentY + maxRowHeight });
+
+                sheets.push({ parts: currentSheetParts });
                 unplaced = nextUnplaced;
             }
             return sheets;
@@ -394,7 +419,7 @@
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
             const timeLimitSec = parseInt(document.getElementById("time-input").value) || 3;
             
-            document.getElementById("board-info").innerText = "Optimizing arrangement... Please wait.";
+            document.getElementById("board-info").innerText = "Optimizing arrangement using Skyline Nesting... Please wait.";
 
             let sortedParts = [...selectedParts].sort((a, b) => {
                 let areaA = partsDatabase[a].length * partsDatabase[a].width;
@@ -424,7 +449,6 @@
                 }
 
                 let currentSheets = runNestingSimulation(shuffled, mat.length, mat.width, margin);
-                
                 if (currentSheets.length < bestSheetCount) {
                     bestSheets = currentSheets;
                     bestSheetCount = currentSheets.length;
@@ -450,6 +474,7 @@
 
                 let recBox = document.createElement("div");
                 recBox.className = "recommendation-box";
+                recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
                 sheetDiv.appendChild(recBox);
 
                 container.appendChild(sheetDiv);
@@ -475,93 +500,6 @@
                     cutArea.appendChild(actualPart);
                     board.appendChild(cutArea);
                 });
-
-                // Cek apakah sisa area benar-benar bisa dipakai untuk minimal 1 part di database
-                let offcuts = [];
-                let remHeightBottom = mat.width - (sheet.usedHeight / scale);
-                let remWidthBottom = mat.length;
-
-                let remHeightSide = 0;
-                let remWidthSide = 0;
-                let sideX = 0;
-                let sideY = 0;
-
-                if (sheet.rows.length > 0) {
-                    let firstRow = sheet.rows[0];
-                    remWidthSide = mat.length - (firstRow.rightEdge / scale);
-                    remHeightSide = firstRow.height / scale;
-                    sideX = firstRow.rightEdge;
-                    sideY = firstRow.y;
-                }
-
-                // Fungsi pembantu mengecek apakah suatu dimensi offcut muat untuk setidaknya 1 part
-                function canFitAnyPart(wBox, hBox) {
-                    for (let fin in partsDatabase) {
-                        let p = partsDatabase[fin];
-                        let effL = p.length + margin;
-                        let effW = p.width + margin;
-                        if ((wBox >= effL && hBox >= effW) || (wBox >= effW && hBox >= effL)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-
-                // Hanya masukkan ke daftar offcut jika ukurannya layak (bisa memuat part terkecil)
-                if (remHeightBottom >= 50 && canFitAnyPart(remWidthBottom, remHeightBottom)) {
-                    offcuts.push({ name: "REMAINING (BOTTOM)", w: remWidthBottom, h: remHeightBottom, x: 0, y: sheet.usedHeight });
-                }
-
-                if (remWidthSide >= 50 && remHeightSide >= 50 && canFitAnyPart(remWidthSide, remHeightSide)) {
-                    offcuts.push({ name: "REMAINING (SIDE)", w: remWidthSide, h: remHeightSide, x: sideX, y: sideY });
-                }
-
-                let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Offcut Recommendation:</h4>`;
-                let hasValidRecs = false;
-
-                if (offcuts.length > 0) {
-                    offcuts.forEach(off => {
-                        const offcutArea = document.createElement("div");
-                        offcutArea.style.position = "absolute";
-                        offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
-                        offcutArea.style.border = "2px dashed #27ae60";
-                        offcutArea.style.width = (off.w * scale) + "px";
-                        offcutArea.style.height = (off.h * scale) + "px";
-                        offcutArea.style.left = off.x + "px";
-                        offcutArea.style.top = off.y + "px";
-                        offcutArea.style.display = "flex";
-                        offcutArea.style.alignItems = "center";
-                        offcutArea.style.justifyContent = "center";
-                        offcutArea.style.color = "#2ecc71";
-                        offcutArea.style.fontSize = "11px";
-                        offcutArea.style.fontWeight = "bold";
-                        offcutArea.style.textAlign = "center";
-                        offcutArea.innerHTML = `${off.name}<br/>${Math.floor(off.w)} x ${Math.floor(off.h)} mm`;
-                        board.appendChild(offcutArea);
-
-                        let recommendations = [];
-                        for (let fin in partsDatabase) {
-                            let p = partsDatabase[fin];
-                            let effL = p.length + margin;
-                            let effW = p.width + margin;
-                            let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
-                            let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
-                            let maxFitCount = Math.max(countNormal, countRotated);
-                            if (maxFitCount > 0) recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
-                        }
-
-                        if (recommendations.length > 0) {
-                            hasValidRecs = true;
-                            recHTML += `<div class="rec-section"><strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:<ul><li>${recommendations.join("</li><li>")}</li></ul></div>`;
-                        }
-                    });
-                }
-
-                if (hasValidRecs) {
-                    recBox.innerHTML = recHTML;
-                } else {
-                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
-                }
             });
 
             document.getElementById("board-info").innerText = `Optimization completed! Total raw material sheets required: ${sheets.length} sheet(s).`;
