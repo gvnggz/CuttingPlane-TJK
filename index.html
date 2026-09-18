@@ -450,7 +450,6 @@
             return sheets;
         }
 
-        // --- SMART OPTIMIZATION DENGAN LIVE TIMER ---
         function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
@@ -586,7 +585,7 @@
                     return false;
                 }
 
-                // Filter hanya free space yang valid dan benar-benar di dalam batas sheet (tidak overlap/keluar batas)
+                // Filter free spaces yang valid di dalam batas sheet
                 let validOffcuts = sheet.freeSpaces.filter(sp => {
                     return sp.w >= 150 && sp.h >= 150 && 
                            sp.x >= 0 && sp.y >= 0 && 
@@ -600,15 +599,24 @@
                 let totalUsableAreaMm2 = 0;
 
                 if (validOffcuts.length > 0) {
-                    // AMBIL SATU AREA SISA UTAMA TERBESAR (TUNGGAL) AGAR TIDAK TUMPANG TINDIH
-                    validOffcuts.sort((a, b) => (b.w * b.h) - (a.w * a.h));
-                    let primaryOffcut = validOffcuts[0];
+                    // AKUMULASI TOTAL LUAS DARI SEMUA KOTAK SISA YANG VALID (TERMASUK AREA X)
+                    let primaryOffcut = validOffcuts[0]; // Kotak utama terbesar untuk visual
+                    let mainRealW = primaryOffcut.w / scale;
+                    let mainRealH = primaryOffcut.h / scale;
 
-                    let realW = primaryOffcut.w / scale;
-                    let realH = primaryOffcut.h / scale;
-                    totalUsableAreaMm2 = realW * realH;
+                    validOffcuts.forEach(sp => {
+                        let rw = sp.w / scale;
+                        let rh = sp.h / scale;
+                        totalUsableAreaMm2 += (rw * rh);
+                    });
 
-                    // Gambar HANYA SATU kotak hijau tunggal yang bersih dan presisi
+                    // Pastikan total area tidak melebihi sisa mutlak sheet (total area - used area)
+                    let maxPossibleRemaining = totalSheetArea - usedArea;
+                    if (totalUsableAreaMm2 > maxPossibleRemaining) {
+                        totalUsableAreaMm2 = maxPossibleRemaining;
+                    }
+
+                    // Render SATU KOTAK HIJAU UTAMA yang bersih untuk representasi visual
                     const offcutArea = document.createElement("div");
                     offcutArea.style.position = "absolute";
                     offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
@@ -624,7 +632,7 @@
                     offcutArea.style.fontSize = "11px";
                     offcutArea.style.fontWeight = "bold";
                     offcutArea.style.textAlign = "center";
-                    offcutArea.innerHTML = `USABLE AREA<br/>${Math.floor(realW)} x ${Math.floor(realH)} mm`;
+                    offcutArea.innerHTML = `USABLE REMAINING AREA<br/>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²`;
                     board.appendChild(offcutArea);
 
                     let usablePercentage = ((totalUsableAreaMm2 / totalSheetArea) * 100).toFixed(1);
