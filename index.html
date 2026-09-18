@@ -22,7 +22,6 @@
             margin-top: 20px;
         }
         
-        /* Area potong termasuk margin (warna merah transparan) */
         .cut-area {
             position: absolute;
             background-color: rgba(231, 76, 60, 0.2); 
@@ -33,12 +32,11 @@
             justify-content: center;
         }
 
-        /* Ukuran aktual part lantai (warna biru) */
         .actual-part {
             background-color: #3498db;
             border: 1px solid #2980b9;
             color: white;
-            font-size: 11px;
+            font-size: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -47,13 +45,23 @@
             height: 100%;
             box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
             overflow: hidden;
+            flex-direction: column;
+        }
+
+        #recommendation-box {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e8f8f5;
+            border-left: 5px solid #27ae60;
+            border-radius: 4px;
+            display: none; /* Disembunyikan sampai kalkulasi selesai */
         }
     </style>
 </head>
 <body>
 
     <h1>Aero Composite - Cutting Plane Optimizer</h1>
-    <p>Aplikasi web untuk optimasi raw material. (Semua dimensi dalam satuan <strong>mm</strong>)</p>
+    <p>Aplikasi web untuk optimasi raw material. (Dimensi dalam <strong>mm</strong>)</p>
 
     <div class="container">
         <!-- Panel Kiri -->
@@ -78,9 +86,9 @@
             <button onclick="clearList()" style="background-color: #e74c3c; margin-top: 5px;">Hapus Daftar</button>
 
             <h4>Daftar Potongan:</h4>
-            <ul id="cut-list" style="font-size: 14px;"></ul>
+            <ul id="cut-list" style="font-size: 13px;"></ul>
 
-            <button style="background-color: #27ae60; font-size:15px; padding: 12px;" onclick="simulateCutting()">Hitung & Visualisasikan</button>
+            <button style="background-color: #27ae60; font-size:15px; padding: 12px;" onclick="simulateCutting()">Hitung & Susun Otomatis</button>
         </div>
 
         <!-- Panel Kanan -->
@@ -88,6 +96,9 @@
             <h3>Visualisasi Pemotongan (Skala 1mm = 0.25px)</h3>
             <p id="board-info" style="color: #7f8c8d;">Pilih material terlebih dahulu di panel kiri.</p>
             <div id="raw-material-board"></div>
+            
+            <!-- Box untuk menampilkan rekomendasi sisa potongan -->
+            <div id="recommendation-box"></div>
         </div>
     </div>
 
@@ -159,6 +170,7 @@
             const matName = document.getElementById("raw-material").value;
             const board = document.getElementById("raw-material-board");
             const info = document.getElementById("board-info");
+            document.getElementById("recommendation-box").style.display = "none";
             
             if(!matName) {
                 board.style.width = "0px";
@@ -189,6 +201,7 @@
             selectedParts = [];
             document.getElementById("cut-list").innerHTML = "";
             document.getElementById("raw-material-board").innerHTML = "";
+            document.getElementById("recommendation-box").style.display = "none";
         }
 
         function simulateCutting() {
@@ -198,7 +211,10 @@
 
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
             const board = document.getElementById("raw-material-board");
+            const recBox = document.getElementById("recommendation-box");
+            
             board.innerHTML = ""; 
+            recBox.style.display = "none";
             
             const matLength = materialsDatabase[matName].length;
             const matWidth = materialsDatabase[matName].width;
@@ -207,42 +223,49 @@
             let currentY = 0;
             let maxRowHeight = 0;
 
+            // 1. Susun part yang diinputkan user
             selectedParts.forEach(partFin => {
                 const part = partsDatabase[partFin];
+                let effectiveLength = part.length + margin;
+                let effectiveWidth = part.width + margin;
                 
-                // Dimensi aktual ditambah overlap (margin)
-                const effectiveLength = part.length + margin;
-                const effectiveWidth = part.width + margin;
-                
-                const w = effectiveLength * scale;
-                const h = effectiveWidth * scale;
+                let w = effectiveLength * scale;
+                let h = effectiveWidth * scale;
+                let isRotated = false;
                 
                 if (currentX + w > (matLength * scale)) {
-                    currentX = 0;
-                    currentY += maxRowHeight;
-                    maxRowHeight = 0;
+                    if (currentX + h <= (matLength * scale)) {
+                        let tempW = w; w = h; h = tempW;
+                        let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
+                        isRotated = true;
+                    } else {
+                        currentX = 0;
+                        currentY += maxRowHeight;
+                        maxRowHeight = 0;
+                    }
                 }
 
                 if (currentY + h > (matWidth * scale)) {
-                    alert(`Peringatan: Material tidak cukup untuk menyusun ${partFin} ke bawah! Sisa part tidak akan tergambar.`);
+                    alert(`Peringatan: Material tidak cukup untuk menyusun part ${partFin}!`);
                     return; 
                 }
 
-                // Membuat area potong luar (Merah Transparan)
                 const cutArea = document.createElement("div");
                 cutArea.className = "cut-area";
                 cutArea.style.width = w + "px";
                 cutArea.style.height = h + "px";
                 cutArea.style.left = currentX + "px";
                 cutArea.style.top = currentY + "px";
-                
-                // Memberikan jarak padding ke dalam sesuai margin (dibagi 2 untuk tiap sisi)
                 cutArea.style.padding = ((margin / 2) * scale) + "px";
 
-                // Membuat kotak part aktual di dalamnya (Biru)
                 const actualPart = document.createElement("div");
                 actualPart.className = "actual-part";
-                actualPart.innerHTML = `<strong>${partFin}</strong><br/>${part.length}x${part.width}`;
+                
+                let rotText = isRotated ? `<span style="color:#f1c40f; font-size:9px;">(Rotated 90°)</span>` : "";
+                let displayLength = isRotated ? part.width : part.length;
+                let displayWidth = isRotated ? part.length : part.width;
+                
+                actualPart.innerHTML = `<strong>${partFin}</strong><br/>${displayLength}x${displayWidth}<br/>${rotText}`;
 
                 cutArea.appendChild(actualPart);
                 board.appendChild(cutArea);
@@ -250,6 +273,61 @@
                 currentX += w;
                 if (h > maxRowHeight) maxRowHeight = h;
             });
+
+            // 2. Kalkulasi Sisa Potongan Besar (Offcut)
+            let totalUsedHeightPx = currentY + maxRowHeight;
+            let remHeightMm = matWidth - (totalUsedHeightPx / scale);
+            let remWidthMm = matLength; // Lebar sisa selalu mengambil full lebar material
+
+            if (remHeightMm > 0) {
+                // Gambar visualisasi sisa potongan
+                const offcutArea = document.createElement("div");
+                offcutArea.style.position = "absolute";
+                offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.2)";
+                offcutArea.style.border = "2px dashed #27ae60";
+                offcutArea.style.width = (remWidthMm * scale) + "px";
+                offcutArea.style.height = (remHeightMm * scale) + "px";
+                offcutArea.style.left = "0px";
+                offcutArea.style.top = totalUsedHeightPx + "px";
+                offcutArea.style.display = "flex";
+                offcutArea.style.alignItems = "center";
+                offcutArea.style.justifyContent = "center";
+                offcutArea.style.color = "#27ae60";
+                offcutArea.style.fontSize = "12px";
+                offcutArea.style.fontWeight = "bold";
+                offcutArea.innerHTML = `SISA MATERIAL<br/>${remWidthMm} x ${remHeightMm.toFixed(1)} mm`;
+                board.appendChild(offcutArea);
+
+                // 3. Cari rekomendasi part apa saja yang muat di sisa material ini
+                let recommendations = [];
+                
+                for (let fin in partsDatabase) {
+                    let p = partsDatabase[fin];
+                    let effL = p.length + margin;
+                    let effW = p.width + margin;
+
+                    // Hitung jika tidak diputar
+                    let countNormal = Math.floor(remWidthMm / effL) * Math.floor(remHeightMm / effW);
+                    // Hitung jika diputar
+                    let countRotated = Math.floor(remWidthMm / effW) * Math.floor(remHeightMm / effL);
+                    
+                    let maxFitCount = Math.max(countNormal, countRotated);
+
+                    if (maxFitCount > 0) {
+                        recommendations.push(`<strong>${maxFitCount} unit</strong> Cargo Floor <strong>${fin}</strong>`);
+                    }
+                }
+
+                // Tampilkan teks rekomendasinya
+                if (recommendations.length > 0) {
+                    recBox.innerHTML = `<h4 style="color:#27ae60; margin-top:0;">💡 Rekomendasi Pemanfaatan Sisa Material (${remWidthMm} x ${Math.floor(remHeightMm)} mm):</h4>
+                                        <p style="margin-bottom:5px;">Sisa raw material ini direkomendasikan untuk disimpan, karena masih bisa digunakan untuk fabrikasi:</p>
+                                        <ul style="margin-top:0;"><li>${recommendations.join("</li><li>")}</li></ul>`;
+                } else {
+                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Sisa material (${Math.floor(remHeightMm)} mm) terlalu kecil untuk memfabrikasi Floor apapun dari database.</p>`;
+                }
+                recBox.style.display = "block";
+            }
         }
 
         window.onload = loadData;
