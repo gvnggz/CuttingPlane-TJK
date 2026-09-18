@@ -102,7 +102,7 @@
 
         .actual-part {
             background-color: #2980b9;
-            border: 1px solid #3498db;
+            border: 1px solid #2980b9;
             color: white;
             font-size: 10px;
             display: flex;
@@ -156,7 +156,7 @@
             <input type="number" id="margin-input" value="20" min="0">
 
             <label for="time-input">3. Optimization Time Limit (Seconds):</label>
-            <input type="number" id="time-input" value="5" min="1" max="60" title="Semakin lama waktu, semakin optimal hasil susunannya">
+            <input type="number" id="time-input" value="3" min="1" max="60" title="Optimization duration">
 
             <!-- Template / Quick Load Section -->
             <div class="template-group">
@@ -304,7 +304,7 @@
             listEl.innerHTML = "";
             selectedParts.forEach(fin => {
                 const li = document.createElement("li");
-                li.textContent = `${fin} (${partsDatabase[fin].length}x{partsDatabase[fin].width} mm)`;
+                li.textContent = `${fin} (${partsDatabase[fin].length} x ${partsDatabase[fin].width} mm)`;
                 listEl.appendChild(li);
             });
         }
@@ -316,12 +316,11 @@
             document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
-        // --- CORE SMART NESTING ALGORITHM (Sorting Priority + Shelf Placement) ---
         function runNestingSimulation(partsList, matLength, matWidth, margin) {
             let unplaced = [...partsList];
             let sheets = [];
 
-            while (unplaced.length > 0 && sheets.length < 20) {
+            while (unplaced.length > 0 && sheets.length < 25) {
                 let currentSheetParts = [];
                 let nextUnplaced = [];
                 
@@ -343,11 +342,9 @@
                     let isRotated = false;
                     let canFit = false;
 
-                    // Cek normal
                     if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
                         canFit = true;
                     } 
-                    // Cek rotasi 90 derajat
                     else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
                         let tempW = w; w = h; h = tempW;
                         let tempL = effL; effL = effW; effW = tempL;
@@ -389,7 +386,6 @@
             return sheets;
         }
 
-        // --- TIME-BASED ITERATIVE OPTIMIZATION (Fungsi Waktu Pencarian) ---
         function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
@@ -398,23 +394,18 @@
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
             const timeLimitSec = parseInt(document.getElementById("time-input").value) || 3;
             
-            document.getElementById("board-info.innerText") = "Optimizing arrangement... Please wait.";
+            document.getElementById("board-info").innerText = "Optimizing arrangement... Please wait.";
 
-            // 1. Urutkan part berdasarkan luas area terbesar ke terkecil (Sorting Priority)
             let sortedParts = [...selectedParts].sort((a, b) => {
                 let areaA = partsDatabase[a].length * partsDatabase[a].width;
                 let areaB = partsDatabase[b].length * partsDatabase[b].width;
-                return areaB - areaA; // Terbesar di depan
+                return areaB - areaA;
             });
 
-            // Jalankan iterasi pertama dengan urutan standar berbobot
             let bestSheets = runNestingSimulation(sortedParts, mat.length, mat.width, margin);
             let bestSheetCount = bestSheets.length;
 
-            // Simulasi iterasi berulang dalam batasan waktu (Time-based Search)
             let startTime = Date.now();
-            let iterations = 0;
-
             let intervalId = setInterval(() => {
                 let elapsed = (Date.now() - startTime) / 1000;
                 if (elapsed >= timeLimitSec) {
@@ -423,12 +414,9 @@
                     return;
                 }
 
-                iterations++;
-                // Buat variasi acak kecil pada daftar terurut untuk mencari kemungkinan susunan yang lebih padat
                 let shuffled = [...sortedParts];
-                // Acak beberapa elemen sesama part besar
                 for(let k = 1; k < shuffled.length; k++) {
-                    if(Math.random() > 0.6) {
+                    if(Math.random() > 0.5) {
                         let temp = shuffled[k];
                         shuffled[k] = shuffled[k-1];
                         shuffled[k-1] = temp;
@@ -437,7 +425,6 @@
 
                 let currentSheets = runNestingSimulation(shuffled, mat.length, mat.width, margin);
                 
-                // Jika jumlah lembar lebih sedikit (lebih efisien), simpan sebagai hasil terbaik!
                 if (currentSheets.length < bestSheetCount) {
                     bestSheets = currentSheets;
                     bestSheetCount = currentSheets.length;
@@ -445,7 +432,6 @@
             }, 50);
         }
 
-        // --- RENDER VISUALISASI KE LAYAR ---
         function renderSheets(sheets, mat) {
             const container = document.getElementById("sheets-container");
             container.innerHTML = "";
@@ -468,7 +454,6 @@
 
                 container.appendChild(sheetDiv);
 
-                // Gambar part di lembar ini
                 sheet.parts.forEach(p => {
                     const partData = partsDatabase[p.fin];
                     const cutArea = document.createElement("div");
@@ -491,7 +476,6 @@
                     board.appendChild(cutArea);
                 });
 
-                // Hitung Offcut
                 let offcuts = [];
                 let remHeightBottom = mat.width - (sheet.usedHeight / scale);
                 if (remHeightBottom >= 15) { 
