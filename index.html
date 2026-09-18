@@ -56,6 +56,9 @@
             border-radius: 4px;
             display: none;
         }
+        
+        .rec-section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #bdc3c7; }
+        .rec-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
     </style>
 </head>
 <body>
@@ -97,7 +100,6 @@
             <p id="board-info" style="color: #7f8c8d;">Pilih material terlebih dahulu di panel kiri.</p>
             <div id="raw-material-board"></div>
             
-            <!-- Box untuk menampilkan rekomendasi sisa potongan -->
             <div id="recommendation-box"></div>
         </div>
     </div>
@@ -189,9 +191,7 @@
         function addPart() {
             const partFin = document.getElementById("part-select").value;
             if (partFin === "") return alert("Pilih part terlebih dahulu!");
-            
             selectedParts.push(partFin);
-            
             const li = document.createElement("li");
             li.textContent = partFin + " (" + partsDatabase[partFin].length + "x" + partsDatabase[partFin].width + " mm)";
             document.getElementById("cut-list").appendChild(li);
@@ -214,6 +214,7 @@
             const recBox = document.getElementById("recommendation-box");
             
             board.innerHTML = ""; 
+            recBox.innerHTML = "";
             recBox.style.display = "none";
             
             const matLength = materialsDatabase[matName].length;
@@ -222,43 +223,35 @@
             let currentX = 0;
             let currentY = 0;
             let maxRowHeight = 0;
+            let maxRightEdgePx = 0; // Deteksi area abu-abu
 
-            // 1. Susun part (Nesting Algorithm 2.0 - Lebih Cerdas)
+            // 1. Susun part
             for (let i = 0; i < selectedParts.length; i++) {
                 const partFin = selectedParts[i];
                 const part = partsDatabase[partFin];
                 
                 let effectiveLength = part.length + margin;
                 let effectiveWidth = part.width + margin;
-                
                 let w = effectiveLength * scale;
                 let h = effectiveWidth * scale;
                 let isRotated = false;
                 let canFit = false;
                 
-                // A. Coba posisi normal di baris saat ini
                 if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
                     canFit = true;
-                }
-                // B. Coba putar di baris saat ini
-                else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
+                } else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
                     let tempW = w; w = h; h = tempW;
                     let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
                     isRotated = true;
                     canFit = true;
-                }
-                // C. Jika tidak muat (baik lurus maupun putar), turun ke baris baru
-                else {
+                } else {
                     currentX = 0;
                     currentY += maxRowHeight;
                     maxRowHeight = 0;
 
-                    // Coba posisi normal di baris baru
                     if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
                         canFit = true;
-                    }
-                    // Coba putar di baris baru
-                    else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
+                    } else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
                         let tempW = w; w = h; h = tempW;
                         let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
                         isRotated = true;
@@ -266,13 +259,11 @@
                     }
                 }
 
-                // D. Jika setelah pindah baris pun tetap tidak muat, berarti material habis
                 if (!canFit) {
                     alert(`Peringatan: Material tidak cukup untuk menyusun part ${partFin}!`);
-                    return; // Berhenti menggambar sisa part
+                    return; 
                 }
 
-                // Gambar part yang berhasil ditempatkan
                 const cutArea = document.createElement("div");
                 cutArea.className = "cut-area";
                 cutArea.style.width = w + "px";
@@ -294,42 +285,61 @@
                 board.appendChild(cutArea);
 
                 currentX += w;
+                if (currentX > maxRightEdgePx) maxRightEdgePx = currentX; // Catat ujung paling kanan
                 if (h > maxRowHeight) maxRowHeight = h;
             }
 
-            // 2. Kalkulasi Sisa Potongan Besar (Offcut)
+            // 2. Kalkulasi 2 Area Sisa Potongan
             let totalUsedHeightPx = currentY + maxRowHeight;
-            let remHeightMm = matWidth - (totalUsedHeightPx / scale);
-            let remWidthMm = matLength;
+            let offcuts = [];
 
-            if (remHeightMm > 0) {
+            // Offcut 1: Area Bawah
+            let remHeight1 = matWidth - (totalUsedHeightPx / scale);
+            let remWidth1 = matLength;
+            if (remHeight1 >= 10) { 
+                offcuts.push({ name: "SISA 1 (BAWAH)", w: remWidth1, h: remHeight1, x: 0, y: totalUsedHeightPx });
+            }
+
+            // Offcut 2: Area Samping Kanan
+            let remWidth2 = matLength - (maxRightEdgePx / scale);
+            let remHeight2 = totalUsedHeightPx / scale;
+            if (remWidth2 >= 10 && remHeight2 >= 10) {
+                offcuts.push({ name: "SISA 2 (SAMPING)", w: remWidth2, h: remHeight2, x: maxRightEdgePx, y: 0 });
+            }
+
+            // 3. Gambar area hijau dan buat rekomendasi
+            let recHTML = `<h4 style="color:#27ae60; margin-top:0;">💡 Rekomendasi Pemanfaatan Sisa Material:</h4>`;
+            let hasValidRecs = false;
+
+            offcuts.forEach(off => {
+                // Gambar hijau di kanvas
                 const offcutArea = document.createElement("div");
                 offcutArea.style.position = "absolute";
                 offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.2)";
                 offcutArea.style.border = "2px dashed #27ae60";
-                offcutArea.style.width = (remWidthMm * scale) + "px";
-                offcutArea.style.height = (remHeightMm * scale) + "px";
-                offcutArea.style.left = "0px";
-                offcutArea.style.top = totalUsedHeightPx + "px";
+                offcutArea.style.width = (off.w * scale) + "px";
+                offcutArea.style.height = (off.h * scale) + "px";
+                offcutArea.style.left = off.x + "px";
+                offcutArea.style.top = off.y + "px";
                 offcutArea.style.display = "flex";
                 offcutArea.style.alignItems = "center";
                 offcutArea.style.justifyContent = "center";
                 offcutArea.style.color = "#27ae60";
-                offcutArea.style.fontSize = "12px";
+                offcutArea.style.fontSize = "11px";
                 offcutArea.style.fontWeight = "bold";
-                offcutArea.innerHTML = `SISA MATERIAL<br/>${remWidthMm} x ${remHeightMm.toFixed(1)} mm`;
+                offcutArea.style.textAlign = "center";
+                offcutArea.innerHTML = `${off.name}<br/>${Math.floor(off.w)} x ${Math.floor(off.h)} mm`;
                 board.appendChild(offcutArea);
 
+                // Cari rekomendasi
                 let recommendations = [];
-                
                 for (let fin in partsDatabase) {
                     let p = partsDatabase[fin];
                     let effL = p.length + margin;
                     let effW = p.width + margin;
 
-                    let countNormal = Math.floor(remWidthMm / effL) * Math.floor(remHeightMm / effW);
-                    let countRotated = Math.floor(remWidthMm / effW) * Math.floor(remHeightMm / effL);
-                    
+                    let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
+                    let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
                     let maxFitCount = Math.max(countNormal, countRotated);
 
                     if (maxFitCount > 0) {
@@ -338,12 +348,19 @@
                 }
 
                 if (recommendations.length > 0) {
-                    recBox.innerHTML = `<h4 style="color:#27ae60; margin-top:0;">💡 Rekomendasi Pemanfaatan Sisa Material (${remWidthMm} x ${Math.floor(remHeightMm)} mm):</h4>
-                                        <p style="margin-bottom:5px;">Sisa raw material ini direkomendasikan untuk disimpan, karena masih bisa digunakan untuk fabrikasi:</p>
-                                        <ul style="margin-top:0;"><li>${recommendations.join("</li><li>")}</li></ul>`;
-                } else {
-                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Sisa material (${Math.floor(remHeightMm)} mm) terlalu kecil untuk memfabrikasi Floor apapun dari database.</p>`;
+                    hasValidRecs = true;
+                    recHTML += `<div class="rec-section">
+                                    <strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> dapat digunakan untuk:
+                                    <ul style="margin-top:5px; margin-bottom:0;"><li>${recommendations.join("</li><li>")}</li></ul>
+                                </div>`;
                 }
+            });
+
+            if (hasValidRecs) {
+                recBox.innerHTML = recHTML;
+                recBox.style.display = "block";
+            } else if (offcuts.length > 0) {
+                recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Semua sisa potongan terlalu kecil untuk memfabrikasi Floor apapun dari database.</p>`;
                 recBox.style.display = "block";
             }
         }
