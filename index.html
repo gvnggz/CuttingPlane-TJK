@@ -10,7 +10,7 @@
         .container { display: flex; gap: 20px; flex-wrap: wrap; }
         .controls { width: 320px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .canvas-area { flex-grow: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); overflow: auto;}
-        label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px;}
+        label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; font-size: 14px;}
         select, input, button { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;}
         button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 20px;}
         button:hover { background-color: #3498db; }
@@ -20,11 +20,21 @@
             border: 2px solid #7f8c8d;
             position: relative;
             margin-top: 20px;
-            /* Ukuran kanvas akan menyesuaikan material yang dipilih */
         }
         
-        .part-box {
+        /* Area potong termasuk margin (warna merah transparan) */
+        .cut-area {
             position: absolute;
+            background-color: rgba(231, 76, 60, 0.2); 
+            border: 1px dashed #c0392b;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Ukuran aktual part lantai (warna biru) */
+        .actual-part {
             background-color: #3498db;
             border: 1px solid #2980b9;
             color: white;
@@ -33,7 +43,8 @@
             align-items: center;
             justify-content: center;
             text-align: center;
-            opacity: 0.85;
+            width: 100%;
+            height: 100%;
             box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
             overflow: hidden;
         }
@@ -55,7 +66,10 @@
                 <option value="">-- Memuat data... --</option>
             </select>
 
-            <label for="part-select">2. Pilih Cargo Floor (FIN):</label>
+            <label for="margin-input">2. Toleransi Potong / Overlap (mm):</label>
+            <input type="number" id="margin-input" value="20" min="0">
+
+            <label for="part-select">3. Pilih Cargo Floor (FIN):</label>
             <select id="part-select">
                 <option value="">-- Memuat data... --</option>
             </select>
@@ -64,7 +78,7 @@
             <button onclick="clearList()" style="background-color: #e74c3c; margin-top: 5px;">Hapus Daftar</button>
 
             <h4>Daftar Potongan:</h4>
-            <ul id="cut-list"></ul>
+            <ul id="cut-list" style="font-size: 14px;"></ul>
 
             <button style="background-color: #27ae60; font-size:15px; padding: 12px;" onclick="simulateCutting()">Hitung & Visualisasikan</button>
         </div>
@@ -78,30 +92,22 @@
     </div>
 
     <script>
-        // ID Spreadsheet milik Anda
         const sheetId = '1BqKlfuhjFLFMSwNPrH_DFniZmAjCXAip0nLU2RxICvo';
-        
-        // Link ajaib dari Google yang merubah Sheet menjadi teks CSV agar bisa dibaca web
         const urlCargo = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Cargo`;
         const urlMaterial = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Material`;
 
         let partsDatabase = {};
         let materialsDatabase = {};
         let selectedParts = [];
-        const scale = 0.25; // Skala layar laptop
+        const scale = 0.25;
 
-        // Fungsi membaca data dari text CSV Google Sheets
         function parseCSV(csvText) {
             const rows = csvText.split('\n');
-            return rows.map(row => {
-                return row.split(',').map(col => col.replace(/(^"|"$)/g, '').trim());
-            });
+            return rows.map(row => row.split(',').map(col => col.replace(/(^"|"$)/g, '').trim()));
         }
 
-        // Fungsi menyedot data saat web pertama dibuka
         async function loadData() {
             try {
-                // 1. Ambil Data Material
                 const resMat = await fetch(urlMaterial);
                 const csvMat = await resMat.text();
                 const matData = parseCSV(csvMat);
@@ -109,12 +115,11 @@
                 const matSelect = document.getElementById("raw-material");
                 matSelect.innerHTML = '<option value="">-- Pilih Raw Material --</option>';
                 
-                // Mulai dari baris ke-1 (karena baris 0 adalah nama kolom/header)
                 for (let i = 1; i < matData.length; i++) {
                     if(matData[i].length < 3) continue;
                     const name = matData[i][0];
-                    const length = parseFloat(matData[i][1]); // Kolom Length
-                    const width = parseFloat(matData[i][2]);  // Kolom Width
+                    const length = parseFloat(matData[i][1]); 
+                    const width = parseFloat(matData[i][2]);  
                     
                     if(name) {
                         materialsDatabase[name] = { length, width };
@@ -122,7 +127,6 @@
                     }
                 }
 
-                // 2. Ambil Data Cargo Floor
                 const resCargo = await fetch(urlCargo);
                 const csvCargo = await resCargo.text();
                 const cargoData = parseCSV(csvCargo);
@@ -132,9 +136,9 @@
                 
                 for (let i = 1; i < cargoData.length; i++) {
                     if(cargoData[i].length < 5) continue;
-                    const fin = cargoData[i][0]; // FIN_Number
-                    const length = parseFloat(cargoData[i][3]); // Kolom Length
-                    const width = parseFloat(cargoData[i][4]);  // Kolom Width
+                    const fin = cargoData[i][0]; 
+                    const length = parseFloat(cargoData[i][3]); 
+                    const width = parseFloat(cargoData[i][4]);  
                     
                     if(fin && !isNaN(length) && !isNaN(width)) {
                         partsDatabase[fin] = { length, width };
@@ -151,7 +155,6 @@
             }
         }
 
-        // Menyesuaikan ukuran kotak visualisasi jika material dipilih
         function updateBoardSize() {
             const matName = document.getElementById("raw-material").value;
             const board = document.getElementById("raw-material-board");
@@ -188,12 +191,12 @@
             document.getElementById("raw-material-board").innerHTML = "";
         }
 
-        // Tahap 3: Logika Penyusunan Kotak
         function simulateCutting() {
             const matName = document.getElementById("raw-material").value;
             if(!matName) return alert("Pilih raw material dulu!");
             if(selectedParts.length === 0) return alert("Tambahkan minimal 1 part!");
 
+            const margin = parseFloat(document.getElementById("margin-input").value) || 0;
             const board = document.getElementById("raw-material-board");
             board.innerHTML = ""; 
             
@@ -206,38 +209,49 @@
 
             selectedParts.forEach(partFin => {
                 const part = partsDatabase[partFin];
-                const w = part.length * scale;
-                const h = part.width * scale;
                 
-                // Logika susun sederhana (ke kanan, kalau nabrak turun ke bawah)
+                // Dimensi aktual ditambah overlap (margin)
+                const effectiveLength = part.length + margin;
+                const effectiveWidth = part.width + margin;
+                
+                const w = effectiveLength * scale;
+                const h = effectiveWidth * scale;
+                
                 if (currentX + w > (matLength * scale)) {
                     currentX = 0;
                     currentY += maxRowHeight;
                     maxRowHeight = 0;
                 }
 
-                // Jika melebihi batas bawah (berarti material kurang)
                 if (currentY + h > (matWidth * scale)) {
                     alert(`Peringatan: Material tidak cukup untuk menyusun ${partFin} ke bawah! Sisa part tidak akan tergambar.`);
-                    return; // Hentikan proses susun
+                    return; 
                 }
 
-                const box = document.createElement("div");
-                box.className = "part-box";
-                box.style.width = w + "px";
-                box.style.height = h + "px";
-                box.style.left = currentX + "px";
-                box.style.top = currentY + "px";
-                box.innerHTML = `<strong>${partFin}</strong><br/>${part.length}x${part.width}`;
+                // Membuat area potong luar (Merah Transparan)
+                const cutArea = document.createElement("div");
+                cutArea.className = "cut-area";
+                cutArea.style.width = w + "px";
+                cutArea.style.height = h + "px";
+                cutArea.style.left = currentX + "px";
+                cutArea.style.top = currentY + "px";
+                
+                // Memberikan jarak padding ke dalam sesuai margin (dibagi 2 untuk tiap sisi)
+                cutArea.style.padding = ((margin / 2) * scale) + "px";
 
-                board.appendChild(box);
+                // Membuat kotak part aktual di dalamnya (Biru)
+                const actualPart = document.createElement("div");
+                actualPart.className = "actual-part";
+                actualPart.innerHTML = `<strong>${partFin}</strong><br/>${part.length}x${part.width}`;
+
+                cutArea.appendChild(actualPart);
+                board.appendChild(cutArea);
 
                 currentX += w;
                 if (h > maxRowHeight) maxRowHeight = h;
             });
         }
 
-        // Panggil fungsi sinkronisasi saat halaman web terbuka
         window.onload = loadData;
     </script>
 </body>
