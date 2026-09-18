@@ -25,7 +25,7 @@
         }
         .container { display: flex; gap: 20px; flex-wrap: wrap; }
         .controls { 
-            width: 330px; 
+            width: 350px; 
             background: #1e1e1e; 
             padding: 20px; 
             border-radius: 8px; 
@@ -54,7 +54,7 @@
             font-size: 13px;
         }
         input:focus { border-color: #3498db; outline: none; }
-        button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 15px;}
+        button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 10px;}
         button:hover { background-color: #3498db; }
         
         .custom-box {
@@ -66,7 +66,24 @@
             display: none;
         }
 
-        #raw-material-board {
+        .template-group {
+            background: #252525;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+
+        .sheet-container {
+            margin-bottom: 30px;
+            border: 1px solid #444;
+            padding: 15px;
+            border-radius: 6px;
+            background: #181818;
+        }
+
+        .raw-material-board {
             background-color: #2b2b2b;
             border: 2px solid #555;
             position: relative;
@@ -99,19 +116,18 @@
             flex-direction: column;
         }
 
-        #recommendation-box {
-            margin-top: 20px;
-            padding: 15px;
+        .recommendation-box {
+            margin-top: 15px;
+            padding: 12px;
             background-color: #16291e;
             border-left: 5px solid #27ae60;
             border-radius: 4px;
             border: 1px solid #1e462c;
-            display: none;
         }
         
-        .rec-section { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #2b4d36; }
+        .rec-section { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #2b4d36; }
         .rec-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-        ul { padding-left: 20px; color: #a3e4d7; }
+        ul { padding-left: 20px; color: #a3e4d7; margin: 5px 0; }
     </style>
 </head>
 <body>
@@ -127,43 +143,46 @@
             
             <label for="raw-material-input">1. Select Raw Material:</label>
             <input type="text" id="raw-material-input" list="raw-materials-list" placeholder="Type material or Custom..." onchange="checkCustomMaterial()">
-            <datalist id="raw-materials-list">
-                <!-- Data loaded dynamically -->
-            </datalist>
+            <datalist id="raw-materials-list"></datalist>
 
-            <!-- Kotak Input Custom Manual (Muncul jika pilih Custom) -->
             <div id="custom-material-inputs" class="custom-box">
                 <label style="margin-top:0;">Custom Length (mm):</label>
-                <input type="number" id="custom-length" placeholder="e.g. 2000" oninput="updateBoardSize()">
+                <input type="number" id="custom-length" placeholder="e.g. 2000">
                 <label>Custom Width (mm):</label>
-                <input type="number" id="custom-width" placeholder="e.g. 1500" oninput="updateBoardSize()">
+                <input type="number" id="custom-width" placeholder="e.g. 1500">
             </div>
 
             <label for="margin-input">2. Cutting Tolerance / Overlap (mm):</label>
             <input type="number" id="margin-input" value="20" min="0">
 
-            <label for="part-input">3. Select Cargo Floor (Type FIN):</label>
-            <input type="text" id="part-input" list="parts-list" placeholder="Type FIN number (e.g. 131BF)...">
-            <datalist id="parts-list">
-                <!-- Data loaded dynamically -->
-            </datalist>
+            <!-- Template / Quick Load Section -->
+            <div class="template-group">
+                <label style="margin-top:0; color:#3498db;">⚡ Quick Templates (Full Replacement):</label>
+                <button style="background-color: #e67e22; margin-top:5px;" onclick="loadTemplate('AFT CARGO')">Load All Aft Cargo</button>
+                <button style="background-color: #e67e22; margin-top:5px;" onclick="loadTemplate('FWD CARGO')">Load All Fwd Cargo</button>
+                <button style="background-color: #d35400; margin-top:5px;" onclick="loadTemplate('ALL')">Load All Cargo Floors</button>
+            </div>
+
+            <label for="part-input">3. Select Individual Part (FIN):</label>
+            <input type="text" id="part-input" list="parts-list" placeholder="Type FIN number...">
+            <datalist id="parts-list"></datalist>
 
             <button onclick="addPart()">+ Add to Cut List</button>
-            <button onclick="clearList()" style="background-color: #c0392b; margin-top: 5px;">Clear List</button>
+            <button onclick="clearList()" style="background-color: #c0392b;">Clear List</button>
 
             <h4>Cutting List:</h4>
             <ul id="cut-list" style="font-size: 13px; color: #ecf0f1;"></ul>
 
-            <button style="background-color: #27ae60; font-size:14px; padding: 11px;" onclick="simulateCutting()">Calculate & Nesting</button>
+            <button style="background-color: #27ae60; font-size:15px; padding: 12px; margin-top: 20px;" onclick="simulateMultiSheetCutting()">Calculate & Multi-Sheet Nesting</button>
         </div>
 
         <!-- Canvas Area -->
         <div class="canvas-area">
-            <h3>Cutting Visualization (Scale 1mm = 0.25px)</h3>
-            <p id="board-info" style="color: #95a5a6; font-size: 13px;">Please select a raw material from the left panel.</p>
-            <div id="raw-material-board"></div>
+            <h3>Multi-Sheet Cutting Visualization (Scale 1mm = 0.25px)</h3>
+            <p id="board-info" style="color: #95a5a6; font-size: 13px;">Please add parts and click calculate.</p>
             
-            <div id="recommendation-box"></div>
+            <!-- Tempat menampung lembar-lembar material hasil kalkulasi -->
+            <div id="sheets-container"></div>
         </div>
     </div>
 
@@ -172,7 +191,7 @@
         const urlCargo = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Cargo`;
         const urlMaterial = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Material`;
 
-        let partsDatabase = {};
+        let partsDatabase = {}; // Menyimpan { fin: { length, width, location } }
         let materialsDatabase = {};
         let selectedParts = [];
         const scale = 0.25;
@@ -213,12 +232,13 @@
                 for (let i = 1; i < cargoData.length; i++) {
                     if(cargoData[i].length < 5) continue;
                     const fin = cargoData[i][0]; 
+                    const location = cargoData[i][1];
                     const length = parseFloat(cargoData[i][3]); 
                     const width = parseFloat(cargoData[i][4]);  
                     
                     if(fin && !isNaN(length) && !isNaN(width)) {
-                        partsDatabase[fin] = { length, width };
-                        cargoList.innerHTML += `<option value="${fin} (${length} x ${width} mm)">`;
+                        partsDatabase[fin] = { length, width, location };
+                        cargoList.innerHTML += `<option value="${fin} (${length} x ${width} mm) [${location}]">`;
                     }
                 }
 
@@ -234,12 +254,10 @@
         function checkCustomMaterial() {
             const val = document.getElementById("raw-material-input").value;
             const customBox = document.getElementById("custom-material-inputs");
-            
             if (val.includes("Custom")) {
                 customBox.style.display = "block";
             } else {
                 customBox.style.display = "none";
-                updateBoardSize();
             }
         }
 
@@ -258,26 +276,6 @@
             return null;
         }
 
-        function updateBoardSize() {
-            const board = document.getElementById("raw-material-board");
-            const info = document.getElementById("board-info");
-            document.getElementById("recommendation-box").style.display = "none";
-            
-            const mat = getActiveMaterialDimensions();
-            
-            if(!mat || mat.length <= 0 || mat.width <= 0) {
-                board.style.width = "0px";
-                board.style.height = "0px";
-                info.innerText = "Please select or input valid raw material dimensions.";
-                return;
-            }
-
-            board.style.width = (mat.length * scale) + "px";
-            board.style.height = (mat.width * scale) + "px";
-            info.innerHTML = `<strong>${mat.name}</strong> (Length: ${mat.length} mm x Width: ${mat.width} mm)`;
-            board.innerHTML = ""; 
-        }
-
         function addPart() {
             const partInputValue = document.getElementById("part-input").value;
             const partFin = partInputValue.split(" (")[0].trim();
@@ -287,181 +285,224 @@
             }
             
             selectedParts.push(partFin);
-            const li = document.createElement("li");
-            li.textContent = partFin + " (" + partsDatabase[partFin].length + "x" + partsDatabase[partFin].width + " mm)";
-            document.getElementById("cut-list").appendChild(li);
+            updateCutListUI();
             document.getElementById("part-input").value = "";
+        }
+
+        function loadTemplate(category) {
+            selectedParts = [];
+            for (let fin in partsDatabase) {
+                let p = partsDatabase[fin];
+                if (category === 'ALL' || (p.location && p.location.toUpperCase().includes(category))) {
+                    selectedParts.push(fin);
+                }
+            }
+            updateCutListUI();
+            alert(`Template loaded: ${selectedParts.length} parts added for ${category}`);
+        }
+
+        function updateCutListUI() {
+            const listEl = document.getElementById("cut-list");
+            listEl.innerHTML = "";
+            selectedParts.forEach(fin => {
+                const li = document.createElement("li");
+                li.textContent = `${fin} (${partsDatabase[fin].length}x${partsDatabase[fin].width} mm)`;
+                listEl.appendChild(li);
+            });
         }
 
         function clearList() {
             selectedParts = [];
             document.getElementById("cut-list").innerHTML = "";
-            document.getElementById("raw-material-board").innerHTML = "";
-            document.getElementById("recommendation-box").style.display = "none";
+            document.getElementById("sheets-container").innerHTML = "";
+            document.getElementById("board-info").innerText = "Please add parts and click calculate.";
         }
 
-        function simulateCutting() {
+        // Algoritma Multi-Sheet Nesting
+        function simulateMultiSheetCutting() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions first!");
-            if(selectedParts.length === 0) return alert("Please add at least 1 part!");
+            if(selectedParts.length === 0) return alert("Please add at least 1 part to the cutting list!");
 
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
-            const board = document.getElementById("raw-material-board");
-            const recBox = document.getElementById("recommendation-box");
+            const container = document.getElementById("sheets-container");
+            container.innerHTML = "";
             
-            board.innerHTML = ""; 
-            recBox.innerHTML = "";
-            recBox.style.display = "none";
-            
-            const matLength = mat.length;
-            const matWidth = mat.width;
-            
-            let currentX = 0;
-            let currentY = 0;
-            let maxRowHeight = 0;
-            let rowsInfo = []; 
-            let currentRowMaxHeight = 0;
-            let startRowY = 0;
+            let unplacedParts = [...selectedParts];
+            let sheetCount = 0;
 
-            for (let i = 0; i < selectedParts.length; i++) {
-                const partFin = selectedParts[i];
-                const part = partsDatabase[partFin];
+            // Loop membuat lembar baru sampai semua part habis terpasang
+            while (unplacedParts.length > 0 && sheetCount < 10) {
+                sheetCount++;
+                let sheetDiv = document.createElement("div");
+                sheetDiv.className = "sheet-container";
+                sheetDiv.innerHTML = `<h4 style="color:#3498db; margin-top:0;">Sheet #${sheetCount} (${mat.name}: ${mat.length} x ${mat.width} mm)</h4>`;
                 
-                let effectiveLength = part.length + margin;
-                let effectiveWidth = part.width + margin;
-                let w = effectiveLength * scale;
-                let h = effectiveWidth * scale;
-                let isRotated = false;
-                let canFit = false;
-                
-                if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
-                    canFit = true;
-                } else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
-                    let tempW = w; w = h; h = tempW;
-                    let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
-                    isRotated = true;
-                    canFit = true;
-                } else {
-                    rowsInfo.push({ y: startRowY, height: currentRowMaxHeight, rightEdge: currentX });
+                let board = document.createElement("div");
+                board.className = "raw-material-board";
+                board.style.width = (mat.length * scale) + "px";
+                board.style.height = (mat.width * scale) + "px";
+                sheetDiv.appendChild(board);
 
-                    currentX = 0;
-                    currentY += maxRowHeight;
-                    startRowY = currentY;
-                    maxRowHeight = 0;
-                    currentRowMaxHeight = 0;
+                let recBox = document.createElement("div");
+                recBox.className = "recommendation-box";
+                sheetDiv.appendChild(recBox);
 
-                    if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
+                container.appendChild(sheetDiv);
+
+                let currentX = 0;
+                let currentY = 0;
+                let maxRowHeight = 0;
+                let rowsInfo = []; 
+                let currentRowMaxHeight = 0;
+                let startRowY = 0;
+                let remainingForThisSheet = [];
+
+                for (let i = 0; i < unplacedParts.length; i++) {
+                    const partFin = unplacedParts[i];
+                    const part = partsDatabase[partFin];
+                    
+                    let effectiveLength = part.length + margin;
+                    let effectiveWidth = part.width + margin;
+                    let w = effectiveLength * scale;
+                    let h = effectiveWidth * scale;
+                    let isRotated = false;
+                    let canFit = false;
+                    
+                    if (currentX + w <= (mat.length * scale) && currentY + h <= (mat.width * scale)) {
                         canFit = true;
-                    } else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
+                    } else if (currentX + h <= (mat.length * scale) && currentY + w <= (mat.width * scale)) {
                         let tempW = w; w = h; h = tempW;
                         let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
                         isRotated = true;
                         canFit = true;
+                    } else {
+                        rowsInfo.push({ y: startRowY, height: currentRowMaxHeight, rightEdge: currentX });
+
+                        currentX = 0;
+                        currentY += maxRowHeight;
+                        startRowY = currentY;
+                        maxRowHeight = 0;
+                        currentRowMaxHeight = 0;
+
+                        if (currentX + w <= (mat.length * scale) && currentY + h <= (mat.width * scale)) {
+                            canFit = true;
+                        } else if (currentX + h <= (mat.length * scale) && currentY + w <= (mat.width * scale)) {
+                            let tempW = w; w = h; h = tempW;
+                            let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
+                            isRotated = true;
+                            canFit = true;
+                        }
+                    }
+
+                    if (!canFit) {
+                        // Part ini tidak muat di lembar ini, lempar ke lembar berikutnya
+                        remainingForThisSheet.push(partFin);
+                        continue;
+                    }
+
+                    const cutArea = document.createElement("div");
+                    cutArea.className = "cut-area";
+                    cutArea.style.width = w + "px";
+                    cutArea.style.height = h + "px";
+                    cutArea.style.left = currentX + "px";
+                    cutArea.style.top = currentY + "px";
+                    cutArea.style.padding = ((margin / 2) * scale) + "px";
+
+                    const actualPart = document.createElement("div");
+                    actualPart.className = "actual-part";
+                    
+                    let rotText = isRotated ? `<span style="color:#f1c40f; font-size:9px;">(Rotated 90°)</span>` : "";
+                    let displayLength = isRotated ? part.width : part.length;
+                    let displayWidth = isRotated ? part.length : part.width;
+                    
+                    actualPart.innerHTML = `<strong>${partFin}</strong><br/>${displayLength}x${displayWidth}<br/>${rotText}`;
+
+                    cutArea.appendChild(actualPart);
+                    board.appendChild(cutArea);
+
+                    currentX += w;
+                    if (h > maxRowHeight) maxRowHeight = h;
+                    currentRowMaxHeight = Math.max(currentRowMaxHeight, h);
+                }
+                rowsInfo.push({ y: startRowY, height: maxRowHeight, rightEdge: currentX });
+
+                // Kalkulasi Offcut untuk lembar ini
+                let totalUsedHeightPx = currentY + maxRowHeight;
+                let offcuts = [];
+
+                let remHeightBottom = mat.width - (totalUsedHeightPx / scale);
+                let remWidthBottom = mat.length;
+                if (remHeightBottom >= 15) { 
+                    offcuts.push({ name: "REMAINING (BOTTOM)", w: remWidthBottom, h: remHeightBottom, x: 0, y: totalUsedHeightPx });
+                }
+
+                if (rowsInfo.length > 0) {
+                    let firstRow = rowsInfo[0];
+                    let remWidthSide = mat.length - (firstRow.rightEdge / scale);
+                    let remHeightSide = firstRow.height / scale;
+                    if (remWidthSide >= 30 && remHeightSide >= 30) {
+                        offcuts.push({ name: "REMAINING (SIDE - ROW 1)", w: remWidthSide, h: remHeightSide, x: firstRow.rightEdge, y: firstRow.y });
                     }
                 }
 
-                if (!canFit) {
-                    alert(`Warning: Raw material is not large enough to fit part ${partFin}!`);
-                    return; 
-                }
+                let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${sheetCount} Offcut Recommendation:</h4>`;
+                let hasValidRecs = false;
 
-                const cutArea = document.createElement("div");
-                cutArea.className = "cut-area";
-                cutArea.style.width = w + "px";
-                cutArea.style.height = h + "px";
-                cutArea.style.left = currentX + "px";
-                cutArea.style.top = currentY + "px";
-                cutArea.style.padding = ((margin / 2) * scale) + "px";
+                offcuts.forEach(off => {
+                    const offcutArea = document.createElement("div");
+                    offcutArea.style.position = "absolute";
+                    offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
+                    offcutArea.style.border = "2px dashed #27ae60";
+                    offcutArea.style.width = (off.w * scale) + "px";
+                    offcutArea.style.height = (off.h * scale) + "px";
+                    offcutArea.style.left = off.x + "px";
+                    offcutArea.style.top = off.y + "px";
+                    offcutArea.style.display = "flex";
+                    offcutArea.style.alignItems = "center";
+                    offcutArea.style.justifyContent = "center";
+                    offcutArea.style.color = "#2ecc71";
+                    offcutArea.style.fontSize = "11px";
+                    offcutArea.style.fontWeight = "bold";
+                    offcutArea.style.textAlign = "center";
+                    offcutArea.innerHTML = `${off.name}<br/>${Math.floor(off.w)} x ${Math.floor(off.h)} mm`;
+                    board.appendChild(offcutArea);
 
-                const actualPart = document.createElement("div");
-                actualPart.className = "actual-part";
-                
-                let rotText = isRotated ? `<span style="color:#f1c40f; font-size:9px;">(Rotated 90°)</span>` : "";
-                let displayLength = isRotated ? part.width : part.length;
-                let displayWidth = isRotated ? part.length : part.width;
-                
-                actualPart.innerHTML = `<strong>${partFin}</strong><br/>${displayLength}x${displayWidth}<br/>${rotText}`;
+                    let recommendations = [];
+                    for (let fin in partsDatabase) {
+                        let p = partsDatabase[fin];
+                        let effL = p.length + margin;
+                        let effW = p.width + margin;
 
-                cutArea.appendChild(actualPart);
-                board.appendChild(cutArea);
+                        let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
+                        let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
+                        let maxFitCount = Math.max(countNormal, countRotated);
 
-                currentX += w;
-                if (h > maxRowHeight) maxRowHeight = h;
-                currentRowMaxHeight = Math.max(currentRowMaxHeight, h);
-            }
-            rowsInfo.push({ y: startRowY, height: maxRowHeight, rightEdge: currentX });
-
-            let totalUsedHeightPx = currentY + maxRowHeight;
-            let offcuts = [];
-
-            let remHeightBottom = matWidth - (totalUsedHeightPx / scale);
-            let remWidthBottom = matLength;
-            if (remHeightBottom >= 15) { 
-                offcuts.push({ name: "REMAINING (BOTTOM)", w: remWidthBottom, h: remHeightBottom, x: 0, y: totalUsedHeightPx });
-            }
-
-            if (rowsInfo.length > 0) {
-                let firstRow = rowsInfo[0];
-                let remWidthSide = matLength - (firstRow.rightEdge / scale);
-                let remHeightSide = firstRow.height / scale;
-                if (remWidthSide >= 30 && remHeightSide >= 30) {
-                    offcuts.push({ name: "REMAINING (SIDE - ROW 1)", w: remWidthSide, h: remHeightSide, x: firstRow.rightEdge, y: firstRow.y });
-                }
-            }
-
-            let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Offcut Material Recommendation:</h4>`;
-            let hasValidRecs = false;
-
-            offcuts.forEach(off => {
-                const offcutArea = document.createElement("div");
-                offcutArea.style.position = "absolute";
-                offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
-                offcutArea.style.border = "2px dashed #27ae60";
-                offcutArea.style.width = (off.w * scale) + "px";
-                offcutArea.style.height = (off.h * scale) + "px";
-                offcutArea.style.left = off.x + "px";
-                offcutArea.style.top = off.y + "px";
-                offcutArea.style.display = "flex";
-                offcutArea.style.alignItems = "center";
-                offcutArea.style.justifyContent = "center";
-                offcutArea.style.color = "#2ecc71";
-                offcutArea.style.fontSize = "11px";
-                offcutArea.style.fontWeight = "bold";
-                offcutArea.style.textAlign = "center";
-                offcutArea.innerHTML = `${off.name}<br/>${Math.floor(off.w)} x ${Math.floor(off.h)} mm`;
-                board.appendChild(offcutArea);
-
-                let recommendations = [];
-                for (let fin in partsDatabase) {
-                    let p = partsDatabase[fin];
-                    let effL = p.length + margin;
-                    let effW = p.width + margin;
-
-                    let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
-                    let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
-                    let maxFitCount = Math.max(countNormal, countRotated);
-
-                    if (maxFitCount > 0) {
-                        recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
+                        if (maxFitCount > 0) {
+                            recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
+                        }
                     }
+
+                    if (recommendations.length > 0) {
+                        hasValidRecs = true;
+                        recHTML += `<div class="rec-section">
+                                        <strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:
+                                        <ul style="margin-top:5px; margin-bottom:0;"><li>${recommendations.join("</li><li>")}</li></ul>
+                                    </div>`;
+                    }
+                });
+
+                if (hasValidRecs) {
+                    recBox.innerHTML = recHTML;
+                } else {
+                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small to fabricate any floor.</p>`;
                 }
 
-                if (recommendations.length > 0) {
-                    hasValidRecs = true;
-                    recHTML += `<div class="rec-section">
-                                    <strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:
-                                    <ul style="margin-top:5px; margin-bottom:0;"><li>${recommendations.join("</li><li>")}</li></ul>
-                                </div>`;
-                }
-            });
-
-            if (hasValidRecs) {
-                recBox.innerHTML = recHTML;
-                recBox.style.display = "block";
-            } else if (offcuts.length > 0) {
-                recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcut is too small to fabricate any floor from the database.</p>`;
-                recBox.style.display = "block";
+                // Perbarui sisa part yang belum terpasang untuk diproses di lembar berikutnya
+                unplacedParts = remainingForThisSheet;
             }
+
+            document.getElementById("board-info").innerText = `Calculation completed successfully! Total raw material sheets required: ${sheetCount} sheet(s).`;
         }
 
         window.onload = loadData;
