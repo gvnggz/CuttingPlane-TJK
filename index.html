@@ -476,61 +476,92 @@
                     board.appendChild(cutArea);
                 });
 
+                // Cek apakah sisa area benar-benar bisa dipakai untuk minimal 1 part di database
                 let offcuts = [];
                 let remHeightBottom = mat.width - (sheet.usedHeight / scale);
-                if (remHeightBottom >= 15) { 
-                    offcuts.push({ name: "REMAINING (BOTTOM)", w: mat.length, h: remHeightBottom, x: 0, y: sheet.usedHeight });
-                }
+                let remWidthBottom = mat.length;
+
+                let remHeightSide = 0;
+                let remWidthSide = 0;
+                let sideX = 0;
+                let sideY = 0;
+
                 if (sheet.rows.length > 0) {
                     let firstRow = sheet.rows[0];
-                    let remWidthSide = mat.length - (firstRow.rightEdge / scale);
-                    let remHeightSide = firstRow.height / scale;
-                    if (remWidthSide >= 30 && remHeightSide >= 30) {
-                        offcuts.push({ name: "REMAINING (SIDE)", w: remWidthSide, h: remHeightSide, x: firstRow.rightEdge, y: firstRow.y });
+                    remWidthSide = mat.length - (firstRow.rightEdge / scale);
+                    remHeightSide = firstRow.height / scale;
+                    sideX = firstRow.rightEdge;
+                    sideY = firstRow.y;
+                }
+
+                // Fungsi pembantu mengecek apakah suatu dimensi offcut muat untuk setidaknya 1 part
+                function canFitAnyPart(wBox, hBox) {
+                    for (let fin in partsDatabase) {
+                        let p = partsDatabase[fin];
+                        let effL = p.length + margin;
+                        let effW = p.width + margin;
+                        if ((wBox >= effL && hBox >= effW) || (wBox >= effW && hBox >= effL)) {
+                            return true;
+                        }
                     }
+                    return false;
+                }
+
+                // Hanya masukkan ke daftar offcut jika ukurannya layak (bisa memuat part terkecil)
+                if (remHeightBottom >= 50 && canFitAnyPart(remWidthBottom, remHeightBottom)) {
+                    offcuts.push({ name: "REMAINING (BOTTOM)", w: remWidthBottom, h: remHeightBottom, x: 0, y: sheet.usedHeight });
+                }
+
+                if (remWidthSide >= 50 && remHeightSide >= 50 && canFitAnyPart(remWidthSide, remHeightSide)) {
+                    offcuts.push({ name: "REMAINING (SIDE)", w: remWidthSide, h: remHeightSide, x: sideX, y: sideY });
                 }
 
                 let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Offcut Recommendation:</h4>`;
                 let hasValidRecs = false;
 
-                offcuts.forEach(off => {
-                    const offcutArea = document.createElement("div");
-                    offcutArea.style.position = "absolute";
-                    offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
-                    offcutArea.style.border = "2px dashed #27ae60";
-                    offcutArea.style.width = (off.w * scale) + "px";
-                    offcutArea.style.height = (off.h * scale) + "px";
-                    offcutArea.style.left = off.x + "px";
-                    offcutArea.style.top = off.y + "px";
-                    offcutArea.style.display = "flex";
-                    offcutArea.style.alignItems = "center";
-                    offcutArea.style.justifyContent = "center";
-                    offcutArea.style.color = "#2ecc71";
-                    offcutArea.style.fontSize = "11px";
-                    offcutArea.style.fontWeight = "bold";
-                    offcutArea.style.textAlign = "center";
-                    offcutArea.innerHTML = `${off.name}<br/>${Math.floor(off.w)} x ${Math.floor(off.h)} mm`;
-                    board.appendChild(offcutArea);
+                if (offcuts.length > 0) {
+                    offcuts.forEach(off => {
+                        const offcutArea = document.createElement("div");
+                        offcutArea.style.position = "absolute";
+                        offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
+                        offcutArea.style.border = "2px dashed #27ae60";
+                        offcutArea.style.width = (off.w * scale) + "px";
+                        offcutArea.style.height = (off.h * scale) + "px";
+                        offcutArea.style.left = off.x + "px";
+                        offcutArea.style.top = off.y + "px";
+                        offcutArea.style.display = "flex";
+                        offcutArea.style.alignItems = "center";
+                        offcutArea.style.justifyContent = "center";
+                        offcutArea.style.color = "#2ecc71";
+                        offcutArea.style.fontSize = "11px";
+                        offcutArea.style.fontWeight = "bold";
+                        offcutArea.style.textAlign = "center";
+                        offcutArea.innerHTML = `${off.name}<br/>${Math.floor(off.w)} x ${Math.floor(off.h)} mm`;
+                        board.appendChild(offcutArea);
 
-                    let recommendations = [];
-                    for (let fin in partsDatabase) {
-                        let p = partsDatabase[fin];
-                        let effL = p.length + margin;
-                        let effW = p.width + margin;
-                        let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
-                        let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
-                        let maxFitCount = Math.max(countNormal, countRotated);
-                        if (maxFitCount > 0) recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
-                    }
+                        let recommendations = [];
+                        for (let fin in partsDatabase) {
+                            let p = partsDatabase[fin];
+                            let effL = p.length + margin;
+                            let effW = p.width + margin;
+                            let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
+                            let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
+                            let maxFitCount = Math.max(countNormal, countRotated);
+                            if (maxFitCount > 0) recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
+                        }
 
-                    if (recommendations.length > 0) {
-                        hasValidRecs = true;
-                        recHTML += `<div class="rec-section"><strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:<ul><li>${recommendations.join("</li><li>")}</li></ul></div>`;
-                    }
-                });
+                        if (recommendations.length > 0) {
+                            hasValidRecs = true;
+                            recHTML += `<div class="rec-section"><strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:<ul><li>${recommendations.join("</li><li>")}</li></ul></div>`;
+                        }
+                    });
+                }
 
-                if (hasValidRecs) recBox.innerHTML = recHTML;
-                else recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
+                if (hasValidRecs) {
+                    recBox.innerHTML = recHTML;
+                } else {
+                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
+                }
             });
 
             document.getElementById("board-info").innerText = `Optimization completed! Total raw material sheets required: ${sheets.length} sheet(s).`;
