@@ -316,7 +316,30 @@
             document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
-        // --- TETRIS-STYLE MAXIMAL RECTANGLES / BOTTOM-LEFT NESTING ALGORITHM ---
+        // --- FIXED MAXIMAL RECTANGLES ALGORITHM (CORRECT FREE SPACE SPLITTING) ---
+        function cleanFreeSpaces(spaces) {
+            let cleaned = [];
+            for (let i = 0; i < spaces.length; i++) {
+                let current = spaces[i];
+                let isContained = false;
+                for (let j = 0; j < spaces.length; j++) {
+                    if (i !== j) {
+                        let other = spaces[j];
+                        if (current.x >= other.x && current.y >= other.y &&
+                            current.x + current.w <= other.x + other.w &&
+                            current.y + current.h <= other.y + other.h) {
+                            isContained = true;
+                            break;
+                        }
+                    }
+                }
+                if (!isContained) {
+                    cleaned.push(current);
+                }
+            }
+            return cleaned;
+        }
+
         function runNestingSimulation(partsList, matLength, matWidth, margin) {
             let unplaced = [...partsList];
             let sheets = [];
@@ -326,7 +349,6 @@
                 let currentSheetParts = [];
                 let nextUnplaced = [];
                 
-                // Daftar ruang kosong (free spaces) yang terus diperbarui (Prinsip Tetris / Maximal Rectangles)
                 let freeSpaces = [{ x: 0, y: 0, w: matLength * scale, h: matWidth * scale }];
 
                 for (let i = 0; i < unplaced.length; i++) {
@@ -337,20 +359,19 @@
                     let effW = part.width + margin;
                     let w1 = effL * scale;
                     let h1 = effW * scale;
-                    let w2 = h1; // Rotasi 90 derajat
+                    let w2 = h1; 
                     let h2 = w1;
 
                     let bestSpaceIdx = -1;
                     let useRotation = false;
                     let chosenW = 0, chosenH = 0;
-                    let bestScore = Infinity; // Mencari posisi paling kiri-atas (Bottom-Left Heuristic)
+                    let bestScore = Infinity;
 
                     for (let s = 0; s < freeSpaces.length; s++) {
                         let space = freeSpaces[s];
 
-                        // Cek orientasi normal
                         if (space.w >= w1 && space.h >= h1) {
-                            let score = space.y * 1000 + space.x; // Prioritaskan paling atas & kiri
+                            let score = space.y * 10000 + space.x;
                             if (score < bestScore) {
                                 bestScore = score;
                                 bestSpaceIdx = s;
@@ -359,9 +380,8 @@
                                 chosenH = h1;
                             }
                         }
-                        // Cek orientasi rotasi 90 derajat
                         if (space.w >= w2 && space.h >= h2) {
-                            let score = space.y * 1000 + space.x;
+                            let score = space.y * 10000 + space.x;
                             if (score < bestScore) {
                                 bestScore = score;
                                 bestSpaceIdx = s;
@@ -386,48 +406,33 @@
                             isRotated: useRotation
                         });
 
-                        // Pecah ruang kosong yang terpakai menjadi area-area sisa baru (Guillotine/Rectangle Split)
+                        // Hapus ruang yang dipakai
                         freeSpaces.splice(bestSpaceIdx, 1);
-                        let newSpaces = [];
 
-                        for (let sp of freeSpaces) {
-                            // Jika bersinggungan dengan part baru, potong ruang kosong tersebut
-                            if (!(posX + chosenW <= sp.x || posX >= sp.x + sp.w || posY + chosenH <= sp.y || posY >= sp.y + sp.h)) {
-                                // Sisa atas
-                                if (posY > sp.y) {
-                                    newSpaces.push({ x: sp.x, y: sp.y, w: sp.w, h: posY - sp.y });
-                                }
-                                // Sisa bawah
-                                if (posY + chosenH < sp.y + sp.h) {
-                                    newSpaces.push({ x: sp.x, y: posY + chosenH, w: sp.w, h: (sp.y + sp.h) - (posY + chosenH) });
-                                }
-                                // Sisa kiri
-                                if (posX > sp.x) {
-                                    newSpaces.push({ x: sp.x, y: sp.y, w: posX - sp.x, h: sp.h });
-                                }
-                                // Sisa kanan
-                                if (posX + chosenW < sp.x + sp.w) {
-                                    newSpaces.push({ x: posX + chosenW, y: sp.y, w: (sp.x + sp.w) - (posX + chosenW), h: sp.h });
-                                }
-                            } else {
-                                newSpaces.push(sp);
-                            }
+                        // TAMBAHKAN KEMBALI SISA RUANG (REMNANTS) DENGAN BENAR
+                        let newRemnants = [];
+                        if (space.w > chosenW) {
+                            newRemnants.push({
+                                x: posX + chosenW,
+                                y: posY,
+                                w: space.w - chosenW,
+                                h: space.h
+                            });
+                        }
+                        if (space.h > chosenH) {
+                            newRemnants.push({
+                                x: posX,
+                                y: posY + chosenH,
+                                w: space.w,
+                                h: space.h - chosenH
+                            });
                         }
 
-                        // Bersihkan ruang kosong yang saling bertumpuk agar efisien
-                        freeSpaces = [];
-                        for (let ns of newSpaces) {
-                            let contained = false;
-                            for (let other of newSpaces) {
-                                if (ns !== other && ns.x >= other.x && ns.y >= other.y && ns.x + ns.w <= other.x + other.w && ns.y + ns.h <= other.y + other.h) {
-                                    contained = true;
-                                    break;
-                                }
-                            }
-                            if (!contained) freeSpaces.push(ns);
+                        for (let rem of newRemnants) {
+                            freeSpaces.push(rem);
                         }
 
-                        placed = true;
+                        freeSpaces = cleanFreeSpaces(freeSpaces);
                     } else {
                         nextUnplaced.push(partFin);
                     }
@@ -439,14 +444,14 @@
             return sheets;
         }
 
-        // --- SMART OPTIMIZATION DENGAN LIVE TIMER (1s, 2s, 3s...) ---
+        // --- SMART OPTIMIZATION DENGAN LIVE TIMER ---
         function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
             if(selectedParts.length === 0) return alert("Please add at least 1 part to the cutting list!");
 
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
-            const timeLimitSec = parseInt(document.getElementById("time-input").value) || 3;
+            const timeLimitSec = parseInt(document.getElementById("time-input").value) || 5;
             
             let elapsedTime = 0;
             const infoEl = document.getElementById("board-info");
@@ -478,7 +483,6 @@
                     return;
                 }
 
-                // Acak urutan sedikit untuk mencari kombinasi Tetris terbaik
                 let shuffled = [...sortedParts];
                 for(let k = 1; k < shuffled.length; k++) {
                     if(Math.random() > 0.4) {
@@ -496,7 +500,6 @@
             }, 50);
         }
 
-        // --- RENDER VISUALISASI & PENGHITUNG OFFCUT AKURAT ---
         function renderSheets(sheets, mat, margin) {
             const container = document.getElementById("sheets-container");
             container.innerHTML = "";
@@ -518,7 +521,6 @@
 
                 container.appendChild(sheetDiv);
 
-                // Gambar part di lembar ini
                 sheet.parts.forEach(p => {
                     const partData = partsDatabase[p.fin];
                     const cutArea = document.createElement("div");
@@ -541,7 +543,6 @@
                     board.appendChild(cutArea);
                 });
 
-                // Cek apakah ada ruang kosong tersisa (free space) yang cukup besar untuk membuat part lain (berlaku untuk semua sheet termasuk sheet terakhir)
                 function canFitAnyPart(wBox, hBox) {
                     for (let fin in partsDatabase) {
                         let p = partsDatabase[fin];
@@ -563,7 +564,6 @@
                 let hasValidRecs = false;
 
                 if (validOffcuts.length > 0) {
-                    // Ambil ruang kosong terbesar atau gabungkan sebagai area sisa utama
                     validOffcuts.forEach(off => {
                         let realW = off.w / scale;
                         let realH = off.h / scale;
