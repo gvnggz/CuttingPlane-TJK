@@ -156,7 +156,7 @@
             <input type="number" id="margin-input" value="20" min="0">
 
             <label for="time-input">3. Optimization Time Limit (Seconds):</label>
-            <input type="number" id="time-input" value="3" min="1" max="60" title="Optimization duration">
+            <input type="number" id="time-input" value="5" min="1" max="60" title="Optimization duration">
 
             <!-- Template / Quick Load Section -->
             <div class="template-group">
@@ -316,7 +316,7 @@
             document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
-        // --- IMPROVED SKYLINE / BOTTOM-LEFT NESTING ALGORITHM ---
+        // --- TETRIS-STYLE MAXIMAL RECTANGLES / BOTTOM-LEFT NESTING ALGORITHM ---
         function runNestingSimulation(partsList, matLength, matWidth, margin) {
             let unplaced = [...partsList];
             let sheets = [];
@@ -326,8 +326,7 @@
                 let currentSheetParts = [];
                 let nextUnplaced = [];
                 
-                // Representasi skyline (kumpulan segmen horizontal bebas di dalam sheet)
-                // Setiap segmen mendefinisikan area kosong: {x, y, w, h}
+                // Daftar ruang kosong (free spaces) yang terus diperbarui (Prinsip Tetris / Maximal Rectangles)
                 let freeSpaces = [{ x: 0, y: 0, w: matLength * scale, h: matWidth * scale }];
 
                 for (let i = 0; i < unplaced.length; i++) {
@@ -338,33 +337,38 @@
                     let effW = part.width + margin;
                     let w1 = effL * scale;
                     let h1 = effW * scale;
-                    let w2 = h1; // Varian rotasi 90 derajat
+                    let w2 = h1; // Rotasi 90 derajat
                     let h2 = w1;
 
-                    let placed = false;
                     let bestSpaceIdx = -1;
                     let useRotation = false;
                     let chosenW = 0, chosenH = 0;
+                    let bestScore = Infinity; // Mencari posisi paling kiri-atas (Bottom-Left Heuristic)
 
-                    // Cari ruang kosong (free space) terbaik yang muat menggunakan pendekatan Bottom-Left
                     for (let s = 0; s < freeSpaces.length; s++) {
                         let space = freeSpaces[s];
-                        
-                        // Cek posisi normal (w1, h1)
+
+                        // Cek orientasi normal
                         if (space.w >= w1 && space.h >= h1) {
-                            bestSpaceIdx = s;
-                            useRotation = false;
-                            chosenW = w1;
-                            chosenH = h1;
-                            break; // Ambil ruang pertama yang muat (Bottom-Left)
+                            let score = space.y * 1000 + space.x; // Prioritaskan paling atas & kiri
+                            if (score < bestScore) {
+                                bestScore = score;
+                                bestSpaceIdx = s;
+                                useRotation = false;
+                                chosenW = w1;
+                                chosenH = h1;
+                            }
                         }
-                        // Cek posisi rotasi 90 derajat (w2, h2)
-                        else if (space.w >= w2 && space.h >= h2) {
-                            bestSpaceIdx = s;
-                            useRotation = true;
-                            chosenW = w2;
-                            chosenH = h2;
-                            break;
+                        // Cek orientasi rotasi 90 derajat
+                        if (space.w >= w2 && space.h >= h2) {
+                            let score = space.y * 1000 + space.x;
+                            if (score < bestScore) {
+                                bestScore = score;
+                                bestSpaceIdx = s;
+                                useRotation = true;
+                                chosenW = w2;
+                                chosenH = h2;
+                            }
                         }
                     }
 
@@ -382,35 +386,60 @@
                             isRotated: useRotation
                         });
 
-                        // Pecah ruang kosong yang tersisa (Guillotine Split) akibat penempatan part baru
+                        // Pecah ruang kosong yang terpakai menjadi area-area sisa baru (Guillotine/Rectangle Split)
                         freeSpaces.splice(bestSpaceIdx, 1);
+                        let newSpaces = [];
 
-                        // Buat ruang sisa di sebelah kanan part
-                        let rightWidth = space.w - chosenW;
-                        if (rightWidth > 0) {
-                            freeSpaces.push({ x: posX + chosenW, y: posY, w: rightWidth, h: chosenH });
+                        for (let sp of freeSpaces) {
+                            // Jika bersinggungan dengan part baru, potong ruang kosong tersebut
+                            if (!(posX + chosenW <= sp.x || posX >= sp.x + sp.w || posY + chosenH <= sp.y || posY >= sp.y + sp.h)) {
+                                // Sisa atas
+                                if (posY > sp.y) {
+                                    newSpaces.push({ x: sp.x, y: sp.y, w: sp.w, h: posY - sp.y });
+                                }
+                                // Sisa bawah
+                                if (posY + chosenH < sp.y + sp.h) {
+                                    newSpaces.push({ x: sp.x, y: posY + chosenH, w: sp.w, h: (sp.y + sp.h) - (posY + chosenH) });
+                                }
+                                // Sisa kiri
+                                if (posX > sp.x) {
+                                    newSpaces.push({ x: sp.x, y: sp.y, w: posX - sp.x, h: sp.h });
+                                }
+                                // Sisa kanan
+                                if (posX + chosenW < sp.x + sp.w) {
+                                    newSpaces.push({ x: posX + chosenW, y: sp.y, w: (sp.x + sp.w) - (posX + chosenW), h: sp.h });
+                                }
+                            } else {
+                                newSpaces.push(sp);
+                            }
                         }
 
-                        // Buat ruang sisa di bagian bawah part
-                        let bottomHeight = space.h - chosenH;
-                        if (bottomHeight > 0) {
-                            freeSpaces.push({ x: posX, y: posY + chosenH, w: space.w, h: bottomHeight });
+                        // Bersihkan ruang kosong yang saling bertumpuk agar efisien
+                        freeSpaces = [];
+                        for (let ns of newSpaces) {
+                            let contained = false;
+                            for (let other of newSpaces) {
+                                if (ns !== other && ns.x >= other.x && ns.y >= other.y && ns.x + ns.w <= other.x + other.w && ns.y + ns.h <= other.y + other.h) {
+                                    contained = true;
+                                    break;
+                                }
+                            }
+                            if (!contained) freeSpaces.push(ns);
                         }
 
                         placed = true;
-                    }
-
-                    if (!placed) {
+                    } else {
                         nextUnplaced.push(partFin);
                     }
                 }
 
-                sheets.push({ parts: currentSheetParts });
+                sheets.push({ parts: currentSheetParts, freeSpaces: freeSpaces });
                 unplaced = nextUnplaced;
             }
             return sheets;
         }
 
+        // --- SMART OPTIMIZATION DENGAN LIVE TIMER (1s, 2s, 3s...) ---
         function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
@@ -419,7 +448,9 @@
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
             const timeLimitSec = parseInt(document.getElementById("time-input").value) || 3;
             
-            document.getElementById("board-info").innerText = "Optimizing arrangement using Skyline Nesting... Please wait.";
+            let elapsedTime = 0;
+            const infoEl = document.getElementById("board-info");
+            infoEl.innerText = `Optimizing... (Elapsed: 0s / ${timeLimitSec}s)`;
 
             let sortedParts = [...selectedParts].sort((a, b) => {
                 let areaA = partsDatabase[a].length * partsDatabase[a].width;
@@ -431,17 +462,26 @@
             let bestSheetCount = bestSheets.length;
 
             let startTime = Date.now();
-            let intervalId = setInterval(() => {
+            let timerInterval = setInterval(() => {
+                elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+                if (elapsedTime <= timeLimitSec) {
+                    infoEl.innerText = `Optimizing... (Elapsed: ${elapsedTime}s / ${timeLimitSec}s)`;
+                }
+            }, 1000);
+
+            let searchInterval = setInterval(() => {
                 let elapsed = (Date.now() - startTime) / 1000;
                 if (elapsed >= timeLimitSec) {
-                    clearInterval(intervalId);
-                    renderSheets(bestSheets, mat);
+                    clearInterval(searchInterval);
+                    clearInterval(timerInterval);
+                    renderSheets(bestSheets, mat, margin);
                     return;
                 }
 
+                // Acak urutan sedikit untuk mencari kombinasi Tetris terbaik
                 let shuffled = [...sortedParts];
                 for(let k = 1; k < shuffled.length; k++) {
-                    if(Math.random() > 0.5) {
+                    if(Math.random() > 0.4) {
                         let temp = shuffled[k];
                         shuffled[k] = shuffled[k-1];
                         shuffled[k-1] = temp;
@@ -456,10 +496,10 @@
             }, 50);
         }
 
-        function renderSheets(sheets, mat) {
+        // --- RENDER VISUALISASI & PENGHITUNG OFFCUT AKURAT ---
+        function renderSheets(sheets, mat, margin) {
             const container = document.getElementById("sheets-container");
             container.innerHTML = "";
-            const margin = parseFloat(document.getElementById("margin-input").value) || 0;
 
             sheets.forEach((sheet, index) => {
                 let sheetDiv = document.createElement("div");
@@ -474,11 +514,11 @@
 
                 let recBox = document.createElement("div");
                 recBox.className = "recommendation-box";
-                recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
                 sheetDiv.appendChild(recBox);
 
                 container.appendChild(sheetDiv);
 
+                // Gambar part di lembar ini
                 sheet.parts.forEach(p => {
                     const partData = partsDatabase[p.fin];
                     const cutArea = document.createElement("div");
@@ -500,9 +540,80 @@
                     cutArea.appendChild(actualPart);
                     board.appendChild(cutArea);
                 });
+
+                // Cek apakah ada ruang kosong tersisa (free space) yang cukup besar untuk membuat part lain (berlaku untuk semua sheet termasuk sheet terakhir)
+                function canFitAnyPart(wBox, hBox) {
+                    for (let fin in partsDatabase) {
+                        let p = partsDatabase[fin];
+                        let effL = p.length + margin;
+                        let effW = p.width + margin;
+                        let w1 = effL * scale;
+                        let h1 = effW * scale;
+                        let w2 = h1, h2 = w1;
+                        if ((wBox >= w1 && hBox >= h1) || (wBox >= w2 && hBox >= h2)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                let validOffcuts = sheet.freeSpaces.filter(sp => sp.w >= 150 && sp.h >= 150 && canFitAnyPart(sp.w, sp.h));
+
+                let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Offcut Recommendation:</h4>`;
+                let hasValidRecs = false;
+
+                if (validOffcuts.length > 0) {
+                    // Ambil ruang kosong terbesar atau gabungkan sebagai area sisa utama
+                    validOffcuts.forEach(off => {
+                        let realW = off.w / scale;
+                        let realH = off.h / scale;
+
+                        const offcutArea = document.createElement("div");
+                        offcutArea.style.position = "absolute";
+                        offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
+                        offcutArea.style.border = "2px dashed #27ae60";
+                        offcutArea.style.width = off.w + "px";
+                        offcutArea.style.height = off.h + "px";
+                        offcutArea.style.left = off.x + "px";
+                        offcutArea.style.top = off.y + "px";
+                        offcutArea.style.display = "flex";
+                        offcutArea.style.alignItems = "center";
+                        offcutArea.style.justifyContent = "center";
+                        offcutArea.style.color = "#2ecc71";
+                        offcutArea.style.fontSize = "11px";
+                        offcutArea.style.fontWeight = "bold";
+                        offcutArea.style.textAlign = "center";
+                        offcutArea.innerHTML = `REMAINING AREA<br/>${Math.floor(realW)} x ${Math.floor(realH)} mm`;
+                        board.appendChild(offcutArea);
+
+                        let recommendations = [];
+                        for (let fin in partsDatabase) {
+                            let p = partsDatabase[fin];
+                            let effL = p.length + margin;
+                            let effW = p.width + margin;
+                            let countNormal = Math.floor(realW / effL) * Math.floor(realH / effW);
+                            let countRotated = Math.floor(realW / effW) * Math.floor(realH / effL);
+                            let maxFitCount = Math.max(countNormal, countRotated);
+                            if (maxFitCount > 0) {
+                                recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
+                            }
+                        }
+
+                        if (recommendations.length > 0) {
+                            hasValidRecs = true;
+                            recHTML += `<div class="rec-section"><strong>Area (${Math.floor(realW)} x ${Math.floor(realH)} mm)</strong> can be used for:<ul><li>${recommendations.join("</li><li>")}</li></ul></div>`;
+                        }
+                    });
+                }
+
+                if (hasValidRecs) {
+                    recBox.innerHTML = recHTML;
+                } else {
+                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
+                }
             });
 
-            document.getElementById("board-info").innerText = `Optimization completed! Total raw material sheets required: ${sheets.length} sheet(s).`;
+            document.getElementById("board-info").innerText = `Optimization completed successfully! Total raw material sheets required: ${sheets.length} sheet(s).`;
         }
 
         window.onload = loadData;
