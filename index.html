@@ -511,12 +511,13 @@
             container.innerHTML = "";
 
             const totalSheetArea = mat.length * mat.width;
+            const boardMaxW = mat.length * scale;
+            const boardMaxH = mat.width * scale;
 
             sheets.forEach((sheet, index) => {
                 let sheetDiv = document.createElement("div");
                 sheetDiv.className = "sheet-container";
 
-                // Hitung total luas part yang terpasang di sheet ini
                 let usedArea = 0;
                 sheet.parts.forEach(p => {
                     let realW = p.w / scale;
@@ -537,8 +538,8 @@
                 
                 let board = document.createElement("div");
                 board.className = "raw-material-board";
-                board.style.width = (mat.length * scale) + "px";
-                board.style.height = (mat.width * scale) + "px";
+                board.style.width = boardMaxW + "px";
+                board.style.height = boardMaxH + "px";
                 sheetDiv.appendChild(board);
 
                 let recBox = document.createElement("div");
@@ -547,6 +548,7 @@
 
                 container.appendChild(sheetDiv);
 
+                // Render parts
                 sheet.parts.forEach(p => {
                     const partData = partsDatabase[p.fin];
                     const cutArea = document.createElement("div");
@@ -584,45 +586,53 @@
                     return false;
                 }
 
-                // Filter ruang sisa yang layak
-                let validOffcuts = sheet.freeSpaces.filter(sp => sp.w >= 150 && sp.h >= 150 && canFitAnyPart(sp.w, sp.h));
+                // Filter hanya free space yang valid dan benar-benar di dalam batas sheet (tidak overlap/keluar batas)
+                let validOffcuts = sheet.freeSpaces.filter(sp => {
+                    return sp.w >= 150 && sp.h >= 150 && 
+                           sp.x >= 0 && sp.y >= 0 && 
+                           (sp.x + sp.w) <= boardMaxW && 
+                           (sp.y + sp.h) <= boardMaxH &&
+                           canFitAnyPart(sp.w, sp.h);
+                });
 
                 let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Forecasting & Offcut Analysis:</h4>`;
                 let hasValidRecs = false;
                 let totalUsableAreaMm2 = 0;
 
                 if (validOffcuts.length > 0) {
-                    validOffcuts.forEach(off => {
-                        let realW = off.w / scale;
-                        let realH = off.h / scale;
-                        let areaMm2 = realW * realH;
-                        totalUsableAreaMm2 += areaMm2;
+                    // AMBIL SATU AREA SISA UTAMA TERBESAR (TUNGGAL) AGAR TIDAK TUMPANG TINDIH
+                    validOffcuts.sort((a, b) => (b.w * b.h) - (a.w * a.h));
+                    let primaryOffcut = validOffcuts[0];
 
-                        const offcutArea = document.createElement("div");
-                        offcutArea.style.position = "absolute";
-                        offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
-                        offcutArea.style.border = "2px dashed #27ae60";
-                        offcutArea.style.width = off.w + "px";
-                        offcutArea.style.height = off.h + "px";
-                        offcutArea.style.left = off.x + "px";
-                        offcutArea.style.top = off.y + "px";
-                        offcutArea.style.display = "flex";
-                        offcutArea.style.alignItems = "center";
-                        offcutArea.style.justifyContent = "center";
-                        offcutArea.style.color = "#2ecc71";
-                        offcutArea.style.fontSize = "11px";
-                        offcutArea.style.fontWeight = "bold";
-                        offcutArea.style.textAlign = "center";
-                        offcutArea.innerHTML = `USABLE AREA<br/>${Math.floor(realW)} x ${Math.floor(realH)} mm`;
-                        board.appendChild(offcutArea);
-                    });
+                    let realW = primaryOffcut.w / scale;
+                    let realH = primaryOffcut.h / scale;
+                    totalUsableAreaMm2 = realW * realH;
 
-                    // Hitung rekomendasi berdasarkan total usable area atau kotak sisa
+                    // Gambar HANYA SATU kotak hijau tunggal yang bersih dan presisi
+                    const offcutArea = document.createElement("div");
+                    offcutArea.style.position = "absolute";
+                    offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
+                    offcutArea.style.border = "2px dashed #27ae60";
+                    offcutArea.style.width = primaryOffcut.w + "px";
+                    offcutArea.style.height = primaryOffcut.h + "px";
+                    offcutArea.style.left = primaryOffcut.x + "px";
+                    offcutArea.style.top = primaryOffcut.y + "px";
+                    offcutArea.style.display = "flex";
+                    offcutArea.style.alignItems = "center";
+                    offcutArea.style.justifyContent = "center";
+                    offcutArea.style.color = "#2ecc71";
+                    offcutArea.style.fontSize = "11px";
+                    offcutArea.style.fontWeight = "bold";
+                    offcutArea.style.textAlign = "center";
+                    offcutArea.innerHTML = `USABLE AREA<br/>${Math.floor(realW)} x ${Math.floor(realH)} mm`;
+                    board.appendChild(offcutArea);
+
+                    let usablePercentage = ((totalUsableAreaMm2 / totalSheetArea) * 100).toFixed(1);
+
                     let recommendations = [];
                     for (let fin in partsDatabase) {
                         let p = partsDatabase[fin];
                         let partArea = (p.length + margin) * (p.width + margin);
-                        // Perhitungan estimasi berapa unit part yang bisa dimuat dari total luas sisa
                         let possibleCount = Math.floor(totalUsableAreaMm2 / partArea);
                         if (possibleCount > 0) {
                             recommendations.push(`Up to <strong>${possibleCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
@@ -632,7 +642,7 @@
                     if (recommendations.length > 0) {
                         hasValidRecs = true;
                         recHTML += `
-                            <p style="margin-bottom:8px; color:#a3e4d7;">Total Usable Remaining Area: <strong>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²</strong></p>
+                            <p style="margin-bottom:8px; color:#a3e4d7;">Total Usable Remaining Area: <strong>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²</strong> (${usablePercentage}% of total sheet area)</p>
                             <div class="rec-section">Based on total remaining area, it can potentially be used for:
                             <ul><li>${recommendations.slice(0, 6).join("</li><li>")}</li></ul></div>
                         `;
