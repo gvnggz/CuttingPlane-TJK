@@ -99,7 +99,7 @@
             border: 2px solid #555;
             position: relative;
             margin-top: 10px;
-            overflow: hidden; /* Mencegah elemen anak meluber keluar batas board */
+            overflow: hidden; 
         }
         
         .cut-area {
@@ -328,7 +328,6 @@
             document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
-        // --- ANTI-OVERLAP MAXIMAL RECTANGLES ALGORITHM ---
         function runNestingSimulation(partsList, matLength, matWidth, margin) {
             let unplaced = [...partsList];
             let sheets = [];
@@ -435,8 +434,6 @@
                                 }
                                 if (!contained && ns.w > 10 && ns.h > 10) freeSpaces.push(ns);
                             }
-
-                            placed = true;
                         } else {
                             nextUnplaced.push(partFin);
                         }
@@ -445,13 +442,12 @@
                     }
                 }
 
-                sheets.push({ parts: currentSheetParts, freeSpaces: freeSpaces });
+                sheets.push({ parts: currentSheetParts });
                 unplaced = nextUnplaced;
             }
             return sheets;
         }
 
-        // --- SMART OPTIMIZATION DENGAN LIVE TIMER ---
         function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
             if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
@@ -549,7 +545,38 @@
 
                 container.appendChild(sheetDiv);
 
-                // Render parts
+                // --- CANVAS LAYER UNTUK MENGGAMBAR EXACT REMAINING AREA ---
+                const canvas = document.createElement('canvas');
+                canvas.width = boardMaxW;
+                canvas.height = boardMaxH;
+                canvas.style.position = 'absolute';
+                canvas.style.top = '0';
+                canvas.style.left = '0';
+                canvas.style.zIndex = '1'; 
+                canvas.style.pointerEvents = 'none';
+                board.appendChild(canvas);
+                
+                const ctx = canvas.getContext('2d');
+                
+                // 1. Cat seluruh area dengan warna hijau sisa (Usable Area)
+                ctx.fillStyle = "rgba(46, 204, 113, 0.25)";
+                ctx.fillRect(0, 0, boardMaxW, boardMaxH);
+                
+                // 2. HAPUS (Cut-Out) warna hijau di koordinat part agar membentuk pola organik yang memeluk part!
+                sheet.parts.forEach(p => {
+                    ctx.clearRect(p.x, p.y, p.w, p.h);
+                });
+
+                // 3. Gambar garis putus-putus hijau di sekeliling area kosong agar sama persis seperti gambar manual Anda
+                ctx.strokeStyle = "#2ecc71";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(0, 0, boardMaxW, boardMaxH); // Bingkai luar sheet
+                sheet.parts.forEach(p => {
+                    ctx.strokeRect(p.x, p.y, p.w, p.h); // Bingkai dalam yang mengelilingi part
+                });
+
+                // Render Part Element HTML (Berada di atas Canvas)
                 sheet.parts.forEach(p => {
                     const partData = partsDatabase[p.fin];
                     const cutArea = document.createElement("div");
@@ -559,6 +586,7 @@
                     cutArea.style.left = p.x + "px";
                     cutArea.style.top = p.y + "px";
                     cutArea.style.padding = ((margin / 2) * scale) + "px";
+                    cutArea.style.zIndex = '2'; // Part berada di atas Canvas Area Hijau
 
                     const actualPart = document.createElement("div");
                     actualPart.className = "actual-part";
@@ -572,108 +600,92 @@
                     board.appendChild(cutArea);
                 });
 
-                function canFitAnyPart(wBox, hBox) {
-                    for (let fin in partsDatabase) {
-                        let p = partsDatabase[fin];
-                        let effL = p.length + margin;
-                        let effW = p.width + margin;
-                        let w1 = effL * scale;
-                        let h1 = effW * scale;
-                        let w2 = h1, h2 = w1;
-                        if ((wBox >= w1 && hBox >= h1) || (wBox >= w2 && hBox >= h2)) {
-                            return true;
+                // --- KALKULASI MATEMATIS AKURAT DAN PENEMPATAN TEKS ---
+                // Kita hitung dan pecah sisa area menjadi pecahan kotak kecil (hanya untuk kalkulasi luas & center point text)
+                let emptyRects = [{x: 0, y: 0, w: boardMaxW, h: boardMaxH}];
+                sheet.parts.forEach(p => {
+                    let nextEmpty = [];
+                    emptyRects.forEach(r => {
+                        // Jika beririsan, belah rektangel sisa menjadi pecahan agar tidak tumpang tindih
+                        if (p.x < r.x + r.w && p.x + p.w > r.x && p.y < r.y + r.h && p.y + p.h > r.y) {
+                            if (r.y < p.y) nextEmpty.push({x: r.x, y: r.y, w: r.w, h: p.y - r.y});
+                            if (r.y + r.h > p.y + p.h) nextEmpty.push({x: r.x, y: p.y + p.h, w: r.w, h: (r.y + r.h) - (p.y + p.h)});
+                            if (r.x < p.x) {
+                                let ty = Math.max(r.y, p.y);
+                                let by = Math.min(r.y + r.h, p.y + p.h);
+                                nextEmpty.push({x: r.x, y: ty, w: p.x - r.x, h: by - ty});
+                            }
+                            if (r.x + r.w > p.x + p.w) {
+                                let ty = Math.max(r.y, p.y);
+                                let by = Math.min(r.y + r.h, p.y + p.h);
+                                nextEmpty.push({x: p.x + p.w, y: ty, w: (r.x + r.w) - (p.x + p.w), h: by - ty});
+                            }
+                        } else {
+                            nextEmpty.push(r);
                         }
-                    }
-                    return false;
-                }
-
-                // Filter free spaces yang valid di dalam batas sheet
-                let validOffcuts = sheet.freeSpaces.filter(sp => {
-                    return sp.w >= 100 && sp.h >= 100 && 
-                           sp.x >= 0 && sp.y >= 0 && 
-                           (sp.x + sp.w) <= boardMaxW && 
-                           (sp.y + sp.h) <= boardMaxH &&
-                           canFitAnyPart(sp.w, sp.h);
+                    });
+                    emptyRects = nextEmpty;
                 });
 
-                let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Forecasting & Offcut Analysis:</h4>`;
-                let hasValidRecs = false;
                 let totalUsableAreaMm2 = 0;
+                let largestRect = null;
+                let maxArea = 0;
 
-                if (validOffcuts.length > 0) {
-                    // Cari titik Y terbawah (maximum bottom edge) dari SEMUA part di sheet ini
-                    // Agar kotak hijau visual dimulai tepat di bawah part terendah dan TIDAK TUMPANG TINDIH
-                    let maxPartBottom = 0;
-                    sheet.parts.forEach(p => {
-                        let bottomEdge = p.y + p.h;
-                        if (bottomEdge > maxPartBottom) {
-                            maxPartBottom = bottomEdge;
-                        }
-                    });
-
-                    // Akumulasi total luas dari seluruh free space valid (termasuk area samping/bawah seperti area X)
-                    validOffcuts.forEach(sp => {
-                        let rw = sp.w / scale;
-                        let rh = sp.h / scale;
-                        totalUsableAreaMm2 += (rw * rh);
-                    });
-
-                    let maxPossibleRemaining = totalSheetArea - usedArea;
-                    if (totalUsableAreaMm2 > maxPossibleRemaining) {
-                        totalUsableAreaMm2 = maxPossibleRemaining;
+                // Hitung murni luas area tersisa (dijamin sama persis dengan Area Total - Area Part)
+                emptyRects.forEach(r => {
+                    let area = (r.w / scale) * (r.h / scale);
+                    totalUsableAreaMm2 += area;
+                    // Cari area potongan sisa paling besar untuk meletakkan teks
+                    if (area > maxArea) {
+                        maxArea = area;
+                        largestRect = r;
                     }
+                });
 
-                    // Tentukan koordinat visual kotak hijau tunggal secara presisi:
-                    // - Mulai dari Y = maxPartBottom (DI BAWAH PART TERENDAH, DIJAMIN TIDAK OVERLAP)
-                    // - Lebar = boardMaxW (mentok pas di batas kanan sheet, TIDAK KELUAR BATAS)
-                    let visualX = 0;
-                    let visualY = maxPartBottom;
-                    let visualW = boardMaxW;
-                    let visualH = boardMaxH - visualY;
+                let maxPossibleRemaining = totalSheetArea - usedArea;
+                if (totalUsableAreaMm2 > maxPossibleRemaining) {
+                    totalUsableAreaMm2 = maxPossibleRemaining;
+                }
 
-                    if (visualH > 0) {
-                        const offcutArea = document.createElement("div");
-                        offcutArea.style.position = "absolute";
-                        offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
-                        offcutArea.style.border = "2px dashed #27ae60";
-                        offcutArea.style.width = visualW + "px";
-                        offcutArea.style.height = visualH + "px";
-                        offcutArea.style.left = visualX + "px";
-                        offcutArea.style.top = visualY + "px";
-                        offcutArea.style.display = "flex";
-                        offcutArea.style.alignItems = "center";
-                        offcutArea.style.justifyContent = "center";
-                        offcutArea.style.color = '#2ecc71';
-                        offcutArea.style.fontSize = "11px";
-                        offcutArea.style.fontWeight = "bold";
-                        offcutArea.style.textAlign = "center";
-                        offcutArea.innerHTML = `USABLE REMAINING AREA<br/>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²`;
-                        board.appendChild(offcutArea);
-                    }
+                // Letakkan Teks "USABLE REMAINING AREA" tepat di tengah area kosong terbesar
+                if (largestRect && maxArea > (1000 * scale)) {
+                    const labelDiv = document.createElement("div");
+                    labelDiv.style.position = "absolute";
+                    labelDiv.style.left = largestRect.x + "px";
+                    labelDiv.style.top = largestRect.y + "px";
+                    labelDiv.style.width = largestRect.w + "px";
+                    labelDiv.style.height = largestRect.h + "px";
+                    labelDiv.style.display = "flex";
+                    labelDiv.style.alignItems = "center";
+                    labelDiv.style.justifyContent = "center";
+                    labelDiv.style.color = "#2ecc71";
+                    labelDiv.style.fontSize = "12px";
+                    labelDiv.style.fontWeight = "bold";
+                    labelDiv.style.textAlign = "center";
+                    labelDiv.style.pointerEvents = "none";
+                    labelDiv.style.zIndex = '3'; // Selalu berada paling atas
+                    labelDiv.innerHTML = `USABLE REMAINING AREA<br/>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²`;
+                    board.appendChild(labelDiv);
+                }
 
-                    let usablePercentage = ((totalUsableAreaMm2 / totalSheetArea) * 100).toFixed(1);
+                let usablePercentage = ((totalUsableAreaMm2 / totalSheetArea) * 100).toFixed(1);
 
-                    let recommendations = [];
-                    for (let fin in partsDatabase) {
-                        let p = partsDatabase[fin];
-                        let partArea = (p.length + margin) * (p.width + margin);
-                        let possibleCount = Math.floor(totalUsableAreaMm2 / partArea);
-                        if (possibleCount > 0) {
-                            recommendations.push(`Up to <strong>${possibleCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
-                        }
-                    }
-
-                    if (recommendations.length > 0) {
-                        hasValidRecs = true;
-                        recHTML += `
-                            <p style="margin-bottom:8px; color:#a3e4d7;">Total Usable Remaining Area: <strong>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²</strong> (${usablePercentage}% of total sheet area)</p>
-                            <div class="rec-section">Based on total remaining area, it can potentially be used for:
-                            <ul><li>${recommendations.slice(0, 6).join("</li><li>")}</li></ul></div>
-                        `;
+                let recommendations = [];
+                for (let fin in partsDatabase) {
+                    let p = partsDatabase[fin];
+                    let partArea = (p.length + margin) * (p.width + margin);
+                    let possibleCount = Math.floor(totalUsableAreaMm2 / partArea);
+                    if (possibleCount > 0) {
+                        recommendations.push(`Up to <strong>${possibleCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
                     }
                 }
 
-                if (hasValidRecs) {
+                if (recommendations.length > 0) {
+                    recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Forecasting & Offcut Analysis:</h4>
+                        <p style="margin-bottom:8px; color:#a3e4d7;">Total Usable Remaining Area: <strong>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²</strong> (${usablePercentage}% of total sheet area)</p>
+                        <div class="rec-section">Based on total remaining area, it can potentially be used for:
+                        <ul><li>${recommendations.slice(0, 6).join("</li><li>")}</li></ul></div>
+                    `;
                     recBox.innerHTML = recHTML;
                 } else {
                     recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small for forecasting.</p>`;
