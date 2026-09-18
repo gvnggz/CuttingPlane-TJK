@@ -99,6 +99,7 @@
             border: 2px solid #555;
             position: relative;
             margin-top: 10px;
+            overflow: hidden; /* Mencegah elemen anak meluber keluar batas board */
         }
         
         .cut-area {
@@ -600,12 +601,18 @@
                 let totalUsableAreaMm2 = 0;
 
                 if (validOffcuts.length > 0) {
-                    // Cari batas minimum Y (posisi vertikal paling atas dari ruang sisa) dan batas maksimum X di kanan
-                    let minY = boardMaxH;
-                    let maxX = boardMaxW;
+                    // Cari titik Y terbawah (maximum bottom edge) dari SEMUA part di sheet ini
+                    // Agar kotak hijau visual dimulai tepat di bawah part terendah dan TIDAK TUMPANG TINDIH
+                    let maxPartBottom = 0;
+                    sheet.parts.forEach(p => {
+                        let bottomEdge = p.y + p.h;
+                        if (bottomEdge > maxPartBottom) {
+                            maxPartBottom = bottomEdge;
+                        }
+                    });
 
+                    // Akumulasi total luas dari seluruh free space valid (termasuk area samping/bawah seperti area X)
                     validOffcuts.forEach(sp => {
-                        if (sp.y < minY) minY = sp.y;
                         let rw = sp.w / scale;
                         let rh = sp.h / scale;
                         totalUsableAreaMm2 += (rw * rh);
@@ -616,38 +623,33 @@
                         totalUsableAreaMm2 = maxPossibleRemaining;
                     }
 
-                    // Tentukan lebar visual kotak hijau utama secara presisi agar tidak keluar batas sheet di sebelah kanan
-                    let visualWidth = boardMaxW;
-                    let rightmostPartX = 0;
-                    sheet.parts.forEach(p => {
-                        let rightEdge = p.x + p.w;
-                        if (rightEdge > rightmostPartX) rightmostPartX = rightEdge;
-                    });
-                    
-                    // Jika ada ruang di sebelah kanan part tertinggi/terluar, sesuaikan lebar visual kotak hijau
+                    // Tentukan koordinat visual kotak hijau tunggal secara presisi:
+                    // - Mulai dari Y = maxPartBottom (DI BAWAH PART TERENDAH, DIJAMIN TIDAK OVERLAP)
+                    // - Lebar = boardMaxW (mentok pas di batas kanan sheet, TIDAK KELUAR BATAS)
                     let visualX = 0;
-                    let visualY = minY;
-                    let visualH = boardMaxH - visualY;
+                    let visualY = maxPartBottom;
                     let visualW = boardMaxW;
+                    let visualH = boardMaxH - visualY;
 
-                    // Pastikan kotak hijau visual utama digambar presisi tanpa keluar batas
-                    const offcutArea = document.createElement("div");
-                    offcutArea.style.position = "absolute";
-                    offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
-                    offcutArea.style.border = "2px dashed #27ae60";
-                    offcutArea.style.width = visualW + "px";
-                    offcutArea.style.height = visualH + "px";
-                    offcutArea.style.left = visualX + "px";
-                    offcutArea.style.top = visualY + "px";
-                    offcutArea.style.display = "flex";
-                    offcutArea.style.alignItems = "center";
-                    offcutArea.style.justifyContent = "center";
-                    offcutArea.style.color = "#2ecc71";
-                    offcutArea.style.fontSize = "11px";
-                    offcutArea.style.fontWeight = "bold";
-                    offcutArea.style.textAlign = "center";
-                    offcutArea.innerHTML = `USABLE REMAINING AREA<br/>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²`;
-                    board.appendChild(offcutArea);
+                    if (visualH > 0) {
+                        const offcutArea = document.createElement("div");
+                        offcutArea.style.position = "absolute";
+                        offcutArea.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
+                        offcutArea.style.border = "2px dashed #27ae60";
+                        offcutArea.style.width = visualW + "px";
+                        offcutArea.style.height = visualH + "px";
+                        offcutArea.style.left = visualX + "px";
+                        offcutArea.style.top = visualY + "px";
+                        offcutArea.style.display = "flex";
+                        offcutArea.style.alignItems = "center";
+                        offcutArea.style.justifyContent = "center";
+                        offcutArea.style.color = '#2ecc71';
+                        offcutArea.style.fontSize = "11px";
+                        offcutArea.style.fontWeight = "bold";
+                        offcutArea.style.textAlign = "center";
+                        offcutArea.innerHTML = `USABLE REMAINING AREA<br/>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²`;
+                        board.appendChild(offcutArea);
+                    }
 
                     let usablePercentage = ((totalUsableAreaMm2 / totalSheetArea) * 100).toFixed(1);
 
