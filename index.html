@@ -42,7 +42,7 @@
             overflow: auto;
         }
         label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; font-size: 13px; color: #cfcfcf;}
-        input, button { 
+        input, select, button { 
             width: 100%; 
             padding: 9px; 
             margin-bottom: 10px; 
@@ -53,7 +53,7 @@
             color: #ffffff;
             font-size: 13px;
         }
-        input:focus { border-color: #3498db; outline: none; }
+        input:focus, select:focus { border-color: #3498db; outline: none; }
         button { background-color: #2980b9; color: white; border: none; cursor: pointer; font-weight: bold; margin-top: 10px;}
         button:hover { background-color: #3498db; }
         
@@ -102,7 +102,7 @@
 
         .actual-part {
             background-color: #2980b9;
-            border: 1px solid #2980b9;
+            border: 1px solid #3498db;
             color: white;
             font-size: 10px;
             display: flex;
@@ -155,6 +155,9 @@
             <label for="margin-input">2. Cutting Tolerance / Overlap (mm):</label>
             <input type="number" id="margin-input" value="20" min="0">
 
+            <label for="time-input">3. Optimization Time Limit (Seconds):</label>
+            <input type="number" id="time-input" value="5" min="1" max="60" title="Semakin lama waktu, semakin optimal hasil susunannya">
+
             <!-- Template / Quick Load Section -->
             <div class="template-group">
                 <label style="margin-top:0; color:#3498db;">⚡ Quick Templates (Full Replacement):</label>
@@ -163,7 +166,7 @@
                 <button style="background-color: #d35400; margin-top:5px;" onclick="loadTemplate('ALL')">Load All Cargo Floors</button>
             </div>
 
-            <label for="part-input">3. Select Individual Part (FIN):</label>
+            <label for="part-input">4. Select Individual Part (FIN):</label>
             <input type="text" id="part-input" list="parts-list" placeholder="Type FIN number...">
             <datalist id="parts-list"></datalist>
 
@@ -173,15 +176,14 @@
             <h4>Cutting List:</h4>
             <ul id="cut-list" style="font-size: 13px; color: #ecf0f1;"></ul>
 
-            <button style="background-color: #27ae60; font-size:15px; padding: 12px; margin-top: 20px;" onclick="simulateMultiSheetCutting()">Calculate & Multi-Sheet Nesting</button>
+            <button style="background-color: #27ae60; font-size:15px; padding: 12px; margin-top: 20px;" onclick="startSmartOptimization()">🚀 Run Smart Optimization</button>
         </div>
 
         <!-- Canvas Area -->
         <div class="canvas-area">
             <h3>Multi-Sheet Cutting Visualization (Scale 1mm = 0.25px)</h3>
-            <p id="board-info" style="color: #95a5a6; font-size: 13px;">Please add parts and click calculate.</p>
+            <p id="board-info" style="color: #95a5a6; font-size: 13px;">Please add parts and run optimization.</p>
             
-            <!-- Tempat menampung lembar-lembar material hasil kalkulasi -->
             <div id="sheets-container"></div>
         </div>
     </div>
@@ -191,7 +193,7 @@
         const urlCargo = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Cargo`;
         const urlMaterial = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Material`;
 
-        let partsDatabase = {}; // Menyimpan { fin: { length, width, location } }
+        let partsDatabase = {};
         let materialsDatabase = {};
         let selectedParts = [];
         const scale = 0.25;
@@ -279,11 +281,7 @@
         function addPart() {
             const partInputValue = document.getElementById("part-input").value;
             const partFin = partInputValue.split(" (")[0].trim();
-            
-            if (!partFin || !partsDatabase[partFin]) {
-                return alert("Please select a valid Cargo Floor FIN from the list!");
-            }
-            
+            if (!partFin || !partsDatabase[partFin]) return alert("Please select a valid Cargo Floor FIN!");
             selectedParts.push(partFin);
             updateCutListUI();
             document.getElementById("part-input").value = "";
@@ -306,7 +304,7 @@
             listEl.innerHTML = "";
             selectedParts.forEach(fin => {
                 const li = document.createElement("li");
-                li.textContent = `${fin} (${partsDatabase[fin].length}x${partsDatabase[fin].width} mm)`;
+                li.textContent = `${fin} (${partsDatabase[fin].length}x{partsDatabase[fin].width} mm)`;
                 listEl.appendChild(li);
             });
         }
@@ -315,28 +313,148 @@
             selectedParts = [];
             document.getElementById("cut-list").innerHTML = "";
             document.getElementById("sheets-container").innerHTML = "";
-            document.getElementById("board-info").innerText = "Please add parts and click calculate.";
+            document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
-        // Algoritma Multi-Sheet Nesting
-        function simulateMultiSheetCutting() {
+        // --- CORE SMART NESTING ALGORITHM (Sorting Priority + Shelf Placement) ---
+        function runNestingSimulation(partsList, matLength, matWidth, margin) {
+            let unplaced = [...partsList];
+            let sheets = [];
+
+            while (unplaced.length > 0 && sheets.length < 20) {
+                let currentSheetParts = [];
+                let nextUnplaced = [];
+                
+                let currentX = 0;
+                let currentY = 0;
+                let maxRowHeight = 0;
+                let rowsInfo = [];
+                let currentRowMaxHeight = 0;
+                let startRowY = 0;
+
+                for (let i = 0; i < unplaced.length; i++) {
+                    const partFin = unplaced[i];
+                    const part = partsDatabase[partFin];
+                    
+                    let effL = part.length + margin;
+                    let effW = part.width + margin;
+                    let w = effL * scale;
+                    let h = effW * scale;
+                    let isRotated = false;
+                    let canFit = false;
+
+                    // Cek normal
+                    if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
+                        canFit = true;
+                    } 
+                    // Cek rotasi 90 derajat
+                    else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
+                        let tempW = w; w = h; h = tempW;
+                        let tempL = effL; effL = effW; effW = tempL;
+                        isRotated = true;
+                        canFit = true;
+                    } 
+                    else {
+                        rowsInfo.push({ y: startRowY, height: currentRowMaxHeight, rightEdge: currentX });
+                        currentX = 0;
+                        currentY += maxRowHeight;
+                        startRowY = currentY;
+                        maxRowHeight = 0;
+                        currentRowMaxHeight = 0;
+
+                        if (currentX + w <= (matLength * scale) && currentY + h <= (matWidth * scale)) {
+                            canFit = true;
+                        } else if (currentX + h <= (matLength * scale) && currentY + w <= (matWidth * scale)) {
+                            let tempW = w; w = h; h = tempW;
+                            let tempL = effL; effL = effW; effW = tempL;
+                            isRotated = true;
+                            canFit = true;
+                        }
+                    }
+
+                    if (canFit) {
+                        currentSheetParts.push({ fin: partFin, x: currentX, y: currentY, w: w, h: h, isRotated: isRotated });
+                        currentX += w;
+                        if (h > maxRowHeight) maxRowHeight = h;
+                        currentRowMaxHeight = Math.max(currentRowMaxHeight, h);
+                    } else {
+                        nextUnplaced.push(partFin);
+                    }
+                }
+                rowsInfo.push({ y: startRowY, height: maxRowHeight, rightEdge: currentX });
+                
+                sheets.push({ parts: currentSheetParts, rows: rowsInfo, usedHeight: currentY + maxRowHeight });
+                unplaced = nextUnplaced;
+            }
+            return sheets;
+        }
+
+        // --- TIME-BASED ITERATIVE OPTIMIZATION (Fungsi Waktu Pencarian) ---
+        function startSmartOptimization() {
             const mat = getActiveMaterialDimensions();
-            if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions first!");
+            if(!mat || mat.length <= 0 || mat.width <= 0) return alert("Please specify valid raw material dimensions!");
             if(selectedParts.length === 0) return alert("Please add at least 1 part to the cutting list!");
 
             const margin = parseFloat(document.getElementById("margin-input").value) || 0;
+            const timeLimitSec = parseInt(document.getElementById("time-input").value) || 3;
+            
+            document.getElementById("board-info.innerText") = "Optimizing arrangement... Please wait.";
+
+            // 1. Urutkan part berdasarkan luas area terbesar ke terkecil (Sorting Priority)
+            let sortedParts = [...selectedParts].sort((a, b) => {
+                let areaA = partsDatabase[a].length * partsDatabase[a].width;
+                let areaB = partsDatabase[b].length * partsDatabase[b].width;
+                return areaB - areaA; // Terbesar di depan
+            });
+
+            // Jalankan iterasi pertama dengan urutan standar berbobot
+            let bestSheets = runNestingSimulation(sortedParts, mat.length, mat.width, margin);
+            let bestSheetCount = bestSheets.length;
+
+            // Simulasi iterasi berulang dalam batasan waktu (Time-based Search)
+            let startTime = Date.now();
+            let iterations = 0;
+
+            let intervalId = setInterval(() => {
+                let elapsed = (Date.now() - startTime) / 1000;
+                if (elapsed >= timeLimitSec) {
+                    clearInterval(intervalId);
+                    renderSheets(bestSheets, mat);
+                    return;
+                }
+
+                iterations++;
+                // Buat variasi acak kecil pada daftar terurut untuk mencari kemungkinan susunan yang lebih padat
+                let shuffled = [...sortedParts];
+                // Acak beberapa elemen sesama part besar
+                for(let k = 1; k < shuffled.length; k++) {
+                    if(Math.random() > 0.6) {
+                        let temp = shuffled[k];
+                        shuffled[k] = shuffled[k-1];
+                        shuffled[k-1] = temp;
+                    }
+                }
+
+                let currentSheets = runNestingSimulation(shuffled, mat.length, mat.width, margin);
+                
+                // Jika jumlah lembar lebih sedikit (lebih efisien), simpan sebagai hasil terbaik!
+                if (currentSheets.length < bestSheetCount) {
+                    bestSheets = currentSheets;
+                    bestSheetCount = currentSheets.length;
+                }
+            }, 50);
+        }
+
+        // --- RENDER VISUALISASI KE LAYAR ---
+        function renderSheets(sheets, mat) {
             const container = document.getElementById("sheets-container");
             container.innerHTML = "";
-            
-            let unplacedParts = [...selectedParts];
-            let sheetCount = 0;
+            const margin = parseFloat(document.getElementById("margin-input").value) || 0;
 
-            // Loop membuat lembar baru sampai semua part habis terpasang
-            while (unplacedParts.length > 0 && sheetCount < 10) {
-                sheetCount++;
+            sheets.forEach((sheet, index) => {
                 let sheetDiv = document.createElement("div");
                 sheetDiv.className = "sheet-container";
-                sheetDiv.innerHTML = `<h4 style="color:#3498db; margin-top:0;">Sheet #${sheetCount} (${mat.name}: ${mat.length} x ${mat.width} mm)</h4>`;
+                sheetDiv.innerHTML = `<h4 style="color:#3498db; margin-top:0;">Sheet #${index + 1} (${mat.name}: ${mat.length} x ${mat.width} mm)</h4>`;
                 
                 let board = document.createElement("div");
                 board.className = "raw-material-board";
@@ -350,103 +468,45 @@
 
                 container.appendChild(sheetDiv);
 
-                let currentX = 0;
-                let currentY = 0;
-                let maxRowHeight = 0;
-                let rowsInfo = []; 
-                let currentRowMaxHeight = 0;
-                let startRowY = 0;
-                let remainingForThisSheet = [];
-
-                for (let i = 0; i < unplacedParts.length; i++) {
-                    const partFin = unplacedParts[i];
-                    const part = partsDatabase[partFin];
-                    
-                    let effectiveLength = part.length + margin;
-                    let effectiveWidth = part.width + margin;
-                    let w = effectiveLength * scale;
-                    let h = effectiveWidth * scale;
-                    let isRotated = false;
-                    let canFit = false;
-                    
-                    if (currentX + w <= (mat.length * scale) && currentY + h <= (mat.width * scale)) {
-                        canFit = true;
-                    } else if (currentX + h <= (mat.length * scale) && currentY + w <= (mat.width * scale)) {
-                        let tempW = w; w = h; h = tempW;
-                        let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
-                        isRotated = true;
-                        canFit = true;
-                    } else {
-                        rowsInfo.push({ y: startRowY, height: currentRowMaxHeight, rightEdge: currentX });
-
-                        currentX = 0;
-                        currentY += maxRowHeight;
-                        startRowY = currentY;
-                        maxRowHeight = 0;
-                        currentRowMaxHeight = 0;
-
-                        if (currentX + w <= (mat.length * scale) && currentY + h <= (mat.width * scale)) {
-                            canFit = true;
-                        } else if (currentX + h <= (mat.length * scale) && currentY + w <= (mat.width * scale)) {
-                            let tempW = w; w = h; h = tempW;
-                            let tempL = effectiveLength; effectiveLength = effectiveWidth; effectiveWidth = tempL;
-                            isRotated = true;
-                            canFit = true;
-                        }
-                    }
-
-                    if (!canFit) {
-                        // Part ini tidak muat di lembar ini, lempar ke lembar berikutnya
-                        remainingForThisSheet.push(partFin);
-                        continue;
-                    }
-
+                // Gambar part di lembar ini
+                sheet.parts.forEach(p => {
+                    const partData = partsDatabase[p.fin];
                     const cutArea = document.createElement("div");
                     cutArea.className = "cut-area";
-                    cutArea.style.width = w + "px";
-                    cutArea.style.height = h + "px";
-                    cutArea.style.left = currentX + "px";
-                    cutArea.style.top = currentY + "px";
+                    cutArea.style.width = p.w + "px";
+                    cutArea.style.height = p.h + "px";
+                    cutArea.style.left = p.x + "px";
+                    cutArea.style.top = p.y + "px";
                     cutArea.style.padding = ((margin / 2) * scale) + "px";
 
                     const actualPart = document.createElement("div");
                     actualPart.className = "actual-part";
                     
-                    let rotText = isRotated ? `<span style="color:#f1c40f; font-size:9px;">(Rotated 90°)</span>` : "";
-                    let displayLength = isRotated ? part.width : part.length;
-                    let displayWidth = isRotated ? part.length : part.width;
+                    let rotText = p.isRotated ? `<span style="color:#f1c40f; font-size:9px;">(Rotated 90°)</span>` : "";
+                    let displayLength = p.isRotated ? partData.width : partData.length;
+                    let displayWidth = p.isRotated ? partData.length : partData.width;
                     
-                    actualPart.innerHTML = `<strong>${partFin}</strong><br/>${displayLength}x${displayWidth}<br/>${rotText}`;
-
+                    actualPart.innerHTML = `<strong>${p.fin}</strong><br/>${displayLength}x${displayWidth}<br/>${rotText}`;
                     cutArea.appendChild(actualPart);
                     board.appendChild(cutArea);
+                });
 
-                    currentX += w;
-                    if (h > maxRowHeight) maxRowHeight = h;
-                    currentRowMaxHeight = Math.max(currentRowMaxHeight, h);
-                }
-                rowsInfo.push({ y: startRowY, height: maxRowHeight, rightEdge: currentX });
-
-                // Kalkulasi Offcut untuk lembar ini
-                let totalUsedHeightPx = currentY + maxRowHeight;
+                // Hitung Offcut
                 let offcuts = [];
-
-                let remHeightBottom = mat.width - (totalUsedHeightPx / scale);
-                let remWidthBottom = mat.length;
+                let remHeightBottom = mat.width - (sheet.usedHeight / scale);
                 if (remHeightBottom >= 15) { 
-                    offcuts.push({ name: "REMAINING (BOTTOM)", w: remWidthBottom, h: remHeightBottom, x: 0, y: totalUsedHeightPx });
+                    offcuts.push({ name: "REMAINING (BOTTOM)", w: mat.length, h: remHeightBottom, x: 0, y: sheet.usedHeight });
                 }
-
-                if (rowsInfo.length > 0) {
-                    let firstRow = rowsInfo[0];
+                if (sheet.rows.length > 0) {
+                    let firstRow = sheet.rows[0];
                     let remWidthSide = mat.length - (firstRow.rightEdge / scale);
                     let remHeightSide = firstRow.height / scale;
                     if (remWidthSide >= 30 && remHeightSide >= 30) {
-                        offcuts.push({ name: "REMAINING (SIDE - ROW 1)", w: remWidthSide, h: remHeightSide, x: firstRow.rightEdge, y: firstRow.y });
+                        offcuts.push({ name: "REMAINING (SIDE)", w: remWidthSide, h: remHeightSide, x: firstRow.rightEdge, y: firstRow.y });
                     }
                 }
 
-                let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${sheetCount} Offcut Recommendation:</h4>`;
+                let recHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Offcut Recommendation:</h4>`;
                 let hasValidRecs = false;
 
                 offcuts.forEach(off => {
@@ -473,36 +533,23 @@
                         let p = partsDatabase[fin];
                         let effL = p.length + margin;
                         let effW = p.width + margin;
-
                         let countNormal = Math.floor(off.w / effL) * Math.floor(off.h / effW);
                         let countRotated = Math.floor(off.w / effW) * Math.floor(off.h / effL);
                         let maxFitCount = Math.max(countNormal, countRotated);
-
-                        if (maxFitCount > 0) {
-                            recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
-                        }
+                        if (maxFitCount > 0) recommendations.push(`<strong>${maxFitCount} unit(s)</strong> of Cargo Floor <strong>${fin}</strong>`);
                     }
 
                     if (recommendations.length > 0) {
                         hasValidRecs = true;
-                        recHTML += `<div class="rec-section">
-                                        <strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:
-                                        <ul style="margin-top:5px; margin-bottom:0;"><li>${recommendations.join("</li><li>")}</li></ul>
-                                    </div>`;
+                        recHTML += `<div class="rec-section"><strong>${off.name} (${Math.floor(off.w)} x ${Math.floor(off.h)} mm)</strong> can be used for:<ul><li>${recommendations.join("</li><li>")}</li></ul></div>`;
                     }
                 });
 
-                if (hasValidRecs) {
-                    recBox.innerHTML = recHTML;
-                } else {
-                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small to fabricate any floor.</p>`;
-                }
+                if (hasValidRecs) recBox.innerHTML = recHTML;
+                else recBox.innerHTML = `<p style="color:#e74c3c; margin:0;">Remaining offcuts on this sheet are too small.</p>`;
+            });
 
-                // Perbarui sisa part yang belum terpasang untuk diproses di lembar berikutnya
-                unplacedParts = remainingForThisSheet;
-            }
-
-            document.getElementById("board-info").innerText = `Calculation completed successfully! Total raw material sheets required: ${sheetCount} sheet(s).`;
+            document.getElementById("board-info").innerText = `Optimization completed! Total raw material sheets required: ${sheets.length} sheet(s).`;
         }
 
         window.onload = loadData;
