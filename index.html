@@ -316,30 +316,7 @@
             document.getElementById("board-info").innerText = "Please add parts and run optimization.";
         }
 
-        // --- FIXED MAXIMAL RECTANGLES ALGORITHM (CORRECT FREE SPACE SPLITTING) ---
-        function cleanFreeSpaces(spaces) {
-            let cleaned = [];
-            for (let i = 0; i < spaces.length; i++) {
-                let current = spaces[i];
-                let isContained = false;
-                for (let j = 0; j < spaces.length; j++) {
-                    if (i !== j) {
-                        let other = spaces[j];
-                        if (current.x >= other.x && current.y >= other.y &&
-                            current.x + current.w <= other.x + other.w &&
-                            current.y + current.h <= other.y + other.h) {
-                            isContained = true;
-                            break;
-                        }
-                    }
-                }
-                if (!isContained) {
-                    cleaned.push(current);
-                }
-            }
-            return cleaned;
-        }
-
+        // --- ANTI-OVERLAP MAXIMAL RECTANGLES ALGORITHM ---
         function runNestingSimulation(partsList, matLength, matWidth, margin) {
             let unplaced = [...partsList];
             let sheets = [];
@@ -397,42 +374,68 @@
                         let posX = space.x;
                         let posY = space.y;
 
-                        currentSheetParts.push({
-                            fin: partFin,
-                            x: posX,
-                            y: posY,
-                            w: chosenW,
-                            h: chosenH,
-                            isRotated: useRotation
-                        });
-
-                        // Hapus ruang yang dipakai
-                        freeSpaces.splice(bestSpaceIdx, 1);
-
-                        // TAMBAHKAN KEMBALI SISA RUANG (REMNANTS) DENGAN BENAR
-                        let newRemnants = [];
-                        if (space.w > chosenW) {
-                            newRemnants.push({
-                                x: posX + chosenW,
-                                y: posY,
-                                w: space.w - chosenW,
-                                h: space.h
-                            });
+                        // Validasi ganda: pastikan tidak overlap dengan part yang sudah dipasang di sheet ini
+                        let hasOverlap = false;
+                        for (let p of currentSheetParts) {
+                            if (!(posX + chosenW <= p.x || posX >= p.x + p.w || posY + chosenH <= p.y || posY >= p.y + p.h)) {
+                                hasOverlap = true;
+                                break;
+                            }
                         }
-                        if (space.h > chosenH) {
-                            newRemnants.push({
+
+                        if (!hasOverlap) {
+                            currentSheetParts.push({
+                                fin: partFin,
                                 x: posX,
-                                y: posY + chosenH,
-                                w: space.w,
-                                h: space.h - chosenH
+                                y: posY,
+                                w: chosenW,
+                                h: chosenH,
+                                isRotated: useRotation
                             });
-                        }
 
-                        for (let rem of newRemnants) {
-                            freeSpaces.push(rem);
-                        }
+                            // Pecah dan perbarui ruang sisa secara ketat
+                            let updatedSpaces = [];
+                            for (let sp of freeSpaces) {
+                                // Jika ruang sisa bersinggungan dengan part baru, potong ruang tersebut
+                                if (!(posX + chosenW <= sp.x || posX >= sp.x + sp.w || posY + chosenH <= sp.y || posY >= sp.y + sp.h)) {
+                                    // Sisa atas
+                                    if (posY > sp.y) {
+                                        updatedSpaces.push({ x: sp.x, y: sp.y, w: sp.w, h: posY - sp.y });
+                                    }
+                                    // Sisa bawah
+                                    if (posY + chosenH < sp.y + sp.h) {
+                                        updatedSpaces.push({ x: sp.x, y: posY + chosenH, w: sp.w, h: (sp.y + sp.h) - (posY + chosenH) });
+                                    }
+                                    // Sisa kiri
+                                    if (posX > sp.x) {
+                                        updatedSpaces.push({ x: sp.x, y: sp.y, w: posX - sp.x, h: sp.h });
+                                    }
+                                    // Sisa kanan
+                                    if (posX + chosenW < sp.x + sp.w) {
+                                        updatedSpaces.push({ x: posX + chosenW, y: sp.y, w: (sp.x + sp.w) - (posX + chosenW), h: sp.h });
+                                    }
+                                } else {
+                                    updatedSpaces.push(sp);
+                                }
+                            }
 
-                        freeSpaces = cleanFreeSpaces(freeSpaces);
+                            // Filter agar tidak ada ruang kosong yang saling bertumpuk
+                            freeSpaces = [];
+                            for (let ns of updatedSpaces) {
+                                let contained = false;
+                                for (let other of updatedSpaces) {
+                                    if (ns !== other && ns.x >= other.x && ns.y >= other.y && ns.x + ns.w <= other.x + other.w && ns.y + ns.h <= other.y + other.h) {
+                                        contained = true;
+                                        break;
+                                    }
+                                }
+                                if (!contained && ns.w > 10 && ns.h > 10) freeSpaces.push(ns);
+                            }
+
+                            placed = true;
+                        } else {
+                            nextUnplaced.push(partFin);
+                        }
                     } else {
                         nextUnplaced.push(partFin);
                     }
