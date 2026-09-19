@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TJK Composite - Cutting Plane Optimizer</title>
-    <!-- Tambahkan library html2pdf untuk fitur Download PDF nantinya -->
+    <!-- Library untuk konversi HTML ke PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #121212; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
@@ -15,13 +15,15 @@
         .main-layout { display: flex; flex: 1; overflow: hidden; }
         
         /* Panel Kiri */
-        .sidebar { width: 320px; background-color: #1e1e1e; border-right: 1px solid #333; padding: 20px; overflow-y: auto; }
+        .sidebar { width: 340px; background-color: #1e1e1e; border-right: 1px solid #333; padding: 20px; overflow-y: auto; }
         label { font-weight: bold; display: block; margin-top: 12px; margin-bottom: 5px; font-size: 12px; color: #cfcfcf;}
         input, select { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; background-color: #2a2a2a; color: #fff; font-size: 12px; }
         .btn-action { width: 100%; background-color: #2980b9; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 13px; }
         .btn-action:hover { background-color: #3498db; }
         .btn-run { background-color: #27ae60; font-size: 14px; padding: 12px; margin-top: 20px; }
         .btn-run:hover { background-color: #2ecc71; }
+        
+        .template-group { background: #252525; padding: 10px; border-radius: 4px; border: 1px solid #444; margin-top: 15px; margin-bottom: 5px;}
         
         /* Panel Kanan (Workspace) */
         .workspace { flex: 1; padding: 20px; background-color: #121212; overflow-y: auto; position: relative; }
@@ -31,18 +33,21 @@
 
         /* Tabel Part */
         table { width: 100%; border-collapse: collapse; margin-top: 10px; background-color: #1e1e1e; border-radius: 6px; overflow: hidden; }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #2a2a2a; font-size: 13px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #2a2a2a; font-size: 12px; }
         th { background-color: #252525; color: #aaa; font-weight: bold; }
-        tr:hover { background-color: #252525; }
+        tr:hover { background-color: #2b2b2b; }
         .color-preview { border: 1px solid #555; }
         .btn-delete { color: #e74c3c; background: none; border: none; font-size: 16px; cursor: pointer; font-weight: bold; }
         .btn-delete:hover { color: #c0392b; }
 
         /* Canvas Nesting */
         #results-view { display: none; }
-        .raw-material-board { background-color: #2b2b2b; border: 2px solid #555; position: relative; margin-top: 10px; overflow: hidden; margin-bottom: 30px;}
-        .cut-area { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.3); }
-        .actual-part { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; color: #fff; width: 100%; height: 100%; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); text-align: center; font-weight: bold;}
+        .sheet-container { margin-bottom: 30px; border: 1px solid #444; padding: 15px; border-radius: 6px; background: #181818; page-break-inside: avoid;}
+        .sheet-stats { background: #222; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 12px; color: #f1c40f; display: flex; justify-content: space-between; }
+        .raw-material-board { background-color: #2b2b2b; border: 2px solid #555; position: relative; margin-top: 10px; overflow: hidden; }
+        .cut-area { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.4); }
+        .actual-part { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; color: #fff; width: 100%; height: 100%; text-align: center; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); overflow: hidden;}
+        .recommendation-box { margin-top: 15px; padding: 12px; background-color: #16291e; border-left: 5px solid #27ae60; border-radius: 4px; border: 1px solid #1e462c; }
         
         .flex-row { display: flex; gap: 10px; }
         .flex-row > div { flex: 1; }
@@ -52,7 +57,7 @@
 
     <div class="header-bar">
         <h1>TJK Composite - Cutting Plane Optimizer</h1>
-        <p class="subtitle">Precision Nesting Engine for Manufacturing Floor</p>
+        <p class="subtitle">Precision Nesting Engine & Dynamic Forecasting for Manufacturing Floor</p>
     </div>
 
     <div class="main-layout">
@@ -67,16 +72,25 @@
             <div class="flex-row">
                 <div>
                     <label>Part Space (mm):</label>
-                    <input type="number" id="margin-input" value="5" min="0" title="Jarak antar part (Overlap)">
+                    <input type="number" id="margin-input" value="5" min="0" title="Jarak antar part (Overlap/Cutting Tolerance)">
                 </div>
                 <div>
                     <label>Border Space (mm):</label>
-                    <input type="number" id="border-input" value="5" min="0" title="Jarak dari tepi material">
+                    <input type="number" id="border-input" value="5" min="0" title="Jarak aman dari tepi material">
                 </div>
             </div>
 
             <label>Nesting Time Limit (s):</label>
             <input type="number" id="time-input" value="10" min="1">
+
+            <div class="template-group">
+                <label style="margin-top:0; color:#3498db;">⚡ Quick Load Templates:</label>
+                <div class="flex-row">
+                    <button class="btn-action" style="background-color: #e67e22; padding: 6px; font-size:11px;" onclick="loadTemplate('AFT CARGO')">Aft Cargo</button>
+                    <button class="btn-action" style="background-color: #e67e22; padding: 6px; font-size:11px;" onclick="loadTemplate('FWD CARGO')">Fwd Cargo</button>
+                    <button class="btn-action" style="background-color: #d35400; padding: 6px; font-size:11px;" onclick="loadTemplate('ALL')">All Cargo</button>
+                </div>
+            </div>
 
             <label style="margin-top:20px; border-top: 1px solid #333; padding-top:15px;">Add Part to List (FIN):</label>
             <input type="text" id="part-input" list="parts-list" placeholder="Search FIN number...">
@@ -84,18 +98,21 @@
             
             <div class="flex-row">
                 <div style="flex: 2;"><button class="btn-action" onclick="addPart()">+ Add Part</button></div>
-                <div style="flex: 1;"><input type="number" id="qty-input" value="1" min="1" style="margin-top:10px;"></div>
+                <div style="flex: 1;"><input type="number" id="qty-input" value="1" min="1" style="margin-top:10px;" title="Quantity"></div>
             </div>
 
-            <button class="btn-action btn-run" onclick="startOptimization()">🚀 Run Nesting</button>
-            <button class="btn-action" style="background-color: #e67e22; margin-top: 15px;" onclick="downloadPDFReport()" id="btn-download" style="display:none;">📄 Download PDF Report</button>
+            <button class="btn-action" style="background-color: #c0392b;" onclick="clearList()">🗑️ Clear List</button>
+
+            <button class="btn-action btn-run" onclick="startSmartOptimization()">🚀 Run Nesting</button>
+            
+            <button class="btn-action" style="background-color: #9b59b6; margin-top: 15px; display:none;" onclick="downloadPDFReport()" id="btn-download">📄 Download PDF Report</button>
         </div>
 
         <!-- PANEL KANAN: Workspace -->
         <div class="workspace">
             <div class="tab-buttons">
-                <button class="tab-btn active" id="tab-list" onclick="switchTab('list')">Part List</button>
-                <button class="tab-btn" id="tab-results" onclick="switchTab('results')">Nesting Results</button>
+                <button class="tab-btn active" id="tab-list" onclick="switchTab('list')">Part List Input</button>
+                <button class="tab-btn" id="tab-results" onclick="switchTab('results')">Nesting Results & Blueprint</button>
             </div>
 
             <!-- View 1: Dynamic Table -->
@@ -103,46 +120,47 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 50px;">No.</th>
-                            <th style="width: 80px;">Preview</th>
+                            <th style="width: 40px;">No.</th>
+                            <th style="width: 70px; text-align: center;">Preview</th>
                             <th>Name (FIN)</th>
                             <th>Size (mm)</th>
-                            <th style="width: 80px; text-align: center;">Qty</th>
-                            <th style="width: 50px; text-align: center;">Del</th>
+                            <th style="width: 60px; text-align: center;">Qty</th>
+                            <th style="width: 40px; text-align: center;">Del</th>
                         </tr>
                     </thead>
                     <tbody id="table-body">
                         <!-- Rows will be populated here -->
                     </tbody>
                 </table>
-                <p id="empty-msg" style="text-align: center; color: #555; margin-top: 20px; font-size: 13px;">Part list is empty. Add parts from the left panel.</p>
+                <p id="empty-msg" style="text-align: center; color: #555; margin-top: 20px; font-size: 13px;">Part list is empty. Add parts or load templates from the left panel.</p>
             </div>
 
             <!-- View 2: Canvas Results -->
             <div id="results-view">
-                <p id="board-info" style="color: #a3e4d7; font-size: 13px;">Run optimization to view nesting layouts.</p>
-                <div id="sheets-container"></div>
+                <p id="board-info" style="color: #a3e4d7; font-size: 13px; margin-bottom: 20px;">Please configure inputs and run optimization to view layout.</p>
+                <div id="sheets-container">
+                    <!-- Layout Blueprint akan dirender di sini -->
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Database & State Variables
+        // --- DATA & STATE ---
         const sheetId = '1BqKlfuhjFLFMSwNPrH_DFniZmAjCXAip0nLU2RxICvo';
         const urlCargo = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Cargo`;
         const urlMaterial = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Data_Material`;
 
         let partsDatabase = {};
         let materialsDatabase = {};
-        let partListArray = []; // Format dinamis baru
+        let partListArray = []; 
         let partIdCounter = 1;
         const scale = 0.25;
 
-        // Utility: Generate Random Colors for Parts
-        const colors = ["#e74c3c", "#3498db", "#9b59b6", "#f1c40f", "#e67e22", "#1abc9c", "#34495e", "#ff7979", "#badc58", "#ffbe76"];
+        const colors = ["#2980b9", "#e74c3c", "#9b59b6", "#f39c12", "#16a085", "#d35400", "#8e44ad", "#2c3e50", "#c0392b", "#27ae60"];
         function getRandomColor() { return colors[Math.floor(Math.random() * colors.length)]; }
 
-        // Core Functions
+        // --- FETCH GOOGLE SHEETS ---
         function parseCSV(csvText) {
             return csvText.split('\n').map(row => row.split(',').map(col => col.replace(/(^"|"$)/g, '').trim()));
         }
@@ -152,7 +170,7 @@
                 const resMat = await fetch(urlMaterial);
                 const matData = parseCSV(await resMat.text());
                 const matList = document.getElementById("raw-materials-list");
-                matList.innerHTML = '<option value="[Custom Size]">';
+                matList.innerHTML = '<option value="[Custom / Offcut Size]">';
                 for (let i = 1; i < matData.length; i++) {
                     if(matData[i].length < 3) continue;
                     let name = matData[i][0], l = parseFloat(matData[i][1]), w = parseFloat(matData[i][2]);
@@ -165,17 +183,18 @@
                 cargoList.innerHTML = '';
                 for (let i = 1; i < cargoData.length; i++) {
                     if(cargoData[i].length < 5) continue;
-                    let fin = cargoData[i][0], l = parseFloat(cargoData[i][3]), w = parseFloat(cargoData[i][4]);
-                    if(fin && !isNaN(l) && !isNaN(w)) { partsDatabase[fin] = { l, w }; cargoList.innerHTML += `<option value="${fin} (${l} x ${w} mm)">`; }
+                    let fin = cargoData[i][0], loc = cargoData[i][1], l = parseFloat(cargoData[i][3]), w = parseFloat(cargoData[i][4]);
+                    if(fin && !isNaN(l) && !isNaN(w)) { partsDatabase[fin] = { l, w, loc }; cargoList.innerHTML += `<option value="${fin} (${l} x ${w} mm)">`; }
                 }
-                document.getElementById("status-koneksi").innerText = "✅ Synchronized";
+                document.getElementById("status-koneksi").innerText = "✅ Synchronized with Database";
                 document.getElementById("status-koneksi").style.color = "#2ecc71";
             } catch (error) {
-                document.getElementById("status-koneksi").innerText = "❌ Connection Failed";
+                document.getElementById("status-koneksi").innerText = "❌ Database Connection Failed";
+                document.getElementById("status-koneksi").style.color = "#e74c3c";
             }
         }
 
-        // TAB Switching Logic
+        // --- UI & TAB LOGIC ---
         function switchTab(tab) {
             document.getElementById('tab-list').classList.remove('active');
             document.getElementById('tab-results').classList.remove('active');
@@ -191,15 +210,39 @@
             }
         }
 
-        // Add to Dynamic Table
+        // --- DYNAMIC TABLE MANAGEMENT ---
+        function getActiveMaterialDimensions() {
+            const val = document.getElementById("raw-material-input").value;
+            if (val.includes("Custom")) return { name: "Custom", length: 2000, width: 1500 }; // Bisa diubah jika ada custom input logic
+            let matName = val.split(" (")[0].trim();
+            if (materialsDatabase[matName]) return { name: matName, length: materialsDatabase[matName].l, width: materialsDatabase[matName].w };
+            return null;
+        }
+
         function addPart() {
             const val = document.getElementById("part-input").value;
             const fin = val.split(" (")[0].trim();
             const qty = parseInt(document.getElementById("qty-input").value) || 1;
+            if (!fin || !partsDatabase[fin]) return alert("Please select a valid Cargo Floor FIN!");
+            
+            _addPartToTable(fin, qty);
+            document.getElementById("part-input").value = "";
+            document.getElementById("qty-input").value = "1";
+        }
 
-            if (!fin || !partsDatabase[fin]) return alert("Valid FIN required!");
+        function loadTemplate(category) {
+            let count = 0;
+            for (let fin in partsDatabase) {
+                let p = partsDatabase[fin];
+                if (category === 'ALL' || (p.loc && p.loc.toUpperCase().includes(category))) {
+                    _addPartToTable(fin, 1);
+                    count++;
+                }
+            }
+            if(count > 0) switchTab('list');
+        }
 
-            // Check if already in list, if yes just add qty
+        function _addPartToTable(fin, qty) {
             let existing = partListArray.find(p => p.fin === fin);
             if (existing) {
                 existing.qty += qty;
@@ -213,7 +256,6 @@
                     color: getRandomColor()
                 });
             }
-            document.getElementById("part-input").value = "";
             renderTable();
         }
 
@@ -222,20 +264,24 @@
             renderTable();
         }
 
+        function clearList() {
+            partListArray = [];
+            renderTable();
+            document.getElementById("sheets-container").innerHTML = "";
+            document.getElementById("btn-download").style.display = "none";
+        }
+
         function renderTable() {
             const tbody = document.getElementById("table-body");
             tbody.innerHTML = "";
-            
             if(partListArray.length === 0) {
                 document.getElementById("empty-msg").style.display = 'block';
                 return;
             }
-            
             document.getElementById("empty-msg").style.display = 'none';
             
             partListArray.forEach((part, index) => {
-                // Calculate mini preview aspect ratio
-                let maxPrevSize = 40;
+                let maxPrevSize = 35;
                 let scalePrev = maxPrevSize / Math.max(part.l, part.w);
                 let prevW = part.l * scalePrev;
                 let prevH = part.w * scalePrev;
@@ -243,7 +289,7 @@
                 const tr = document.createElement("tr");
                 tr.innerHTML = `
                     <td>${index + 1}</td>
-                    <td><div class="color-preview" style="width:${prevW}px; height:${prevH}px; background-color:${part.color};"></div></td>
+                    <td style="display:flex; justify-content:center;"><div class="color-preview" style="width:${prevW}px; height:${prevH}px; background-color:${part.color};"></div></td>
                     <td style="font-weight:bold;">${part.fin}</td>
                     <td>${part.l} x ${part.w}</td>
                     <td style="text-align: center; font-weight:bold;">${part.qty}</td>
@@ -253,24 +299,402 @@
             });
         }
 
-        function startOptimization() {
-            if(partListArray.length === 0) return alert("Part list is empty!");
-            switchTab('results');
-            document.getElementById("board-info").innerText = "Generating algorithms and preparing PDF blueprints... Please wait.";
+        // --- CORE ALGORITHM: NESTING + BORDER SPACE ---
+        function runNestingSimulation(flatPartsList, matLength, matWidth, margin, borderSpace) {
+            let unplaced = [...flatPartsList];
+            let sheets = [];
+            let maxSheetLimit = 50;
             
-            // Logika nesting yang mengintegrasikan Border Space akan dijalankan di sini.
-            // Placeholder: Saat ini kita fokus transisi layout. Algoritma penuh berjalan di background.
-            
-            setTimeout(() => {
-                document.getElementById("board-info").innerText = "Optimization Finished. Results ready for PDF Export.";
-                document.getElementById("btn-download").style.display = 'block';
-                // Panggil render visualisasi (logika kanvas sebelumnya)
-            }, 1000);
+            // Konversi border murni ke skala rendering
+            let bScale = borderSpace * scale;
+
+            while (unplaced.length > 0 && sheets.length < maxSheetLimit) {
+                let currentSheetParts = [];
+                let nextUnplaced = [];
+                
+                // Area potong pertama dikurangi margin tepi (Border Space)
+                let freeSpaces = [{ 
+                    x: bScale, 
+                    y: bScale, 
+                    w: (matLength * scale) - (2 * bScale), 
+                    h: (matWidth * scale) - (2 * bScale) 
+                }];
+
+                for (let i = 0; i < unplaced.length; i++) {
+                    const partFin = unplaced[i];
+                    const part = partsDatabase[partFin];
+                    const partColor = partListArray.find(p => p.fin === partFin)?.color || "#2980b9";
+                    
+                    let effL = part.l + margin;
+                    let effW = part.w + margin;
+                    let w1 = effL * scale;
+                    let h1 = effW * scale;
+                    let w2 = h1; 
+                    let h2 = w1;
+
+                    let bestSpaceIdx = -1;
+                    let useRotation = false;
+                    let chosenW = 0, chosenH = 0;
+                    let bestScore = Infinity;
+
+                    for (let s = 0; s < freeSpaces.length; s++) {
+                        let space = freeSpaces[s];
+                        if (space.w >= w1 && space.h >= h1) {
+                            let score = space.y * 10000 + space.x; // Prioritas kiri-atas
+                            if (score < bestScore) {
+                                bestScore = score; bestSpaceIdx = s; useRotation = false; chosenW = w1; chosenH = h1;
+                            }
+                        }
+                        if (space.w >= w2 && space.h >= h2) {
+                            let score = space.y * 10000 + space.x;
+                            if (score < bestScore) {
+                                bestScore = score; bestSpaceIdx = s; useRotation = true; chosenW = w2; chosenH = h2;
+                            }
+                        }
+                    }
+
+                    if (bestSpaceIdx !== -1) {
+                        let space = freeSpaces[bestSpaceIdx];
+                        let posX = space.x, posY = space.y;
+
+                        let hasOverlap = false;
+                        for (let p of currentSheetParts) {
+                            if (!(posX + chosenW <= p.x || posX >= p.x + p.w || posY + chosenH <= p.y || posY >= p.y + p.h)) {
+                                hasOverlap = true; break;
+                            }
+                        }
+
+                        if (!hasOverlap) {
+                            currentSheetParts.push({
+                                fin: partFin, color: partColor, x: posX, y: posY, w: chosenW, h: chosenH, isRotated: useRotation
+                            });
+
+                            let updatedSpaces = [];
+                            for (let sp of freeSpaces) {
+                                if (!(posX + chosenW <= sp.x || posX >= sp.x + sp.w || posY + chosenH <= sp.y || posY >= sp.y + sp.h)) {
+                                    if (posY > sp.y) updatedSpaces.push({ x: sp.x, y: sp.y, w: sp.w, h: posY - sp.y });
+                                    if (posY + chosenH < sp.y + sp.h) updatedSpaces.push({ x: sp.x, y: posY + chosenH, w: sp.w, h: (sp.y + sp.h) - (posY + chosenH) });
+                                    if (posX > sp.x) updatedSpaces.push({ x: sp.x, y: sp.y, w: posX - sp.x, h: sp.h });
+                                    if (posX + chosenW < sp.x + sp.w) updatedSpaces.push({ x: posX + chosenW, y: sp.y, w: (sp.x + sp.w) - (posX + chosenW), h: sp.h });
+                                } else {
+                                    updatedSpaces.push(sp);
+                                }
+                            }
+
+                            freeSpaces = [];
+                            for (let ns of updatedSpaces) {
+                                let contained = false;
+                                for (let other of updatedSpaces) {
+                                    if (ns !== other && ns.x >= other.x && ns.y >= other.y && ns.x + ns.w <= other.x + other.w && ns.y + ns.h <= other.y + other.h) {
+                                        contained = true; break;
+                                    }
+                                }
+                                if (!contained && ns.w > 10 && ns.h > 10) freeSpaces.push(ns);
+                            }
+                        } else {
+                            nextUnplaced.push(partFin);
+                        }
+                    } else {
+                        nextUnplaced.push(partFin);
+                    }
+                }
+                sheets.push({ parts: currentSheetParts });
+                unplaced = nextUnplaced;
+            }
+            return sheets;
         }
 
+        // --- OPTIMIZATION TIMING ---
+        function startSmartOptimization() {
+            const mat = getActiveMaterialDimensions();
+            if(!mat) return alert("Please specify valid raw material dimensions!");
+            if(partListArray.length === 0) return alert("Please add at least 1 part to the cutting list!");
+
+            const margin = parseFloat(document.getElementById("margin-input").value) || 0;
+            const borderSpace = parseFloat(document.getElementById("border-input").value) || 0;
+            const timeLimitSec = parseInt(document.getElementById("time-input").value) || 5;
+            
+            switchTab('results');
+            document.getElementById("btn-download").style.display = "none";
+            
+            // FLATTEN ARRAY: Urai qty menjadi individual part untuk algoritma
+            let flatPartsList = [];
+            partListArray.forEach(item => {
+                for(let i=0; i<item.qty; i++){
+                    flatPartsList.push(item.fin);
+                }
+            });
+
+            // Urutkan area terbesar lebih dulu
+            flatPartsList.sort((a, b) => {
+                let areaA = partsDatabase[a].l * partsDatabase[a].w;
+                let areaB = partsDatabase[b].l * partsDatabase[b].w;
+                return areaB - areaA;
+            });
+
+            const infoEl = document.getElementById("board-info");
+            infoEl.innerText = `Optimizing Algorithm... (Elapsed: 0s / ${timeLimitSec}s)`;
+
+            let bestSheets = runNestingSimulation(flatPartsList, mat.length, mat.width, margin, borderSpace);
+            let bestSheetCount = bestSheets.length;
+
+            let startTime = Date.now();
+            let timerInterval = setInterval(() => {
+                let elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+                if (elapsedTime <= timeLimitSec) {
+                    infoEl.innerText = `Optimizing Algorithm... (Elapsed: ${elapsedTime}s / ${timeLimitSec}s)`;
+                }
+            }, 1000);
+
+            let searchInterval = setInterval(() => {
+                let elapsed = (Date.now() - startTime) / 1000;
+                if (elapsed >= timeLimitSec) {
+                    clearInterval(searchInterval);
+                    clearInterval(timerInterval);
+                    renderSheets(bestSheets, mat, margin, borderSpace);
+                    return;
+                }
+
+                // Random Shuffle Simulation
+                let shuffled = [...flatPartsList];
+                for(let k = 1; k < shuffled.length; k++) {
+                    if(Math.random() > 0.4) {
+                        let temp = shuffled[k];
+                        shuffled[k] = shuffled[k-1];
+                        shuffled[k-1] = temp;
+                    }
+                }
+
+                let currentSheets = runNestingSimulation(shuffled, mat.length, mat.width, margin, borderSpace);
+                if (currentSheets.length < bestSheetCount) {
+                    bestSheets = currentSheets;
+                    bestSheetCount = currentSheets.length;
+                }
+            }, 50);
+        }
+
+        // --- RENDER VISUAL & PIXEL-PERFECT USABLE AREA ---
+        function renderSheets(sheets, mat, margin, borderSpace) {
+            const container = document.getElementById("sheets-container");
+            container.innerHTML = "";
+
+            const totalSheetArea = mat.length * mat.width;
+            const boardMaxW = mat.length * scale;
+            const boardMaxH = mat.width * scale;
+            const bScale = borderSpace * scale;
+
+            function canFitAnyPart(wBox, hBox) {
+                for (let fin in partsDatabase) {
+                    let p = partsDatabase[fin];
+                    let effL = (p.l + margin) * scale;
+                    let effW = (p.w + margin) * scale;
+                    if ((wBox >= effL && hBox >= effW) || (wBox >= effW && hBox >= effL)) return true;
+                }
+                return false;
+            }
+
+            sheets.forEach((sheet, index) => {
+                let sheetDiv = document.createElement("div");
+                sheetDiv.className = "sheet-container";
+                sheetDiv.id = `sheet-export-${index}`;
+
+                let usedArea = 0;
+                sheet.parts.forEach(p => {
+                    let realW = p.w / scale;
+                    let realH = p.h / scale;
+                    usedArea += (realW * realH);
+                });
+
+                let utilization = ((usedArea / totalSheetArea) * 100).toFixed(1);
+                let waste = (100 - utilization).toFixed(1);
+
+                sheetDiv.innerHTML = `
+                    <h4 style="color:#3498db; margin:0 0 5px 0;">Blueprint Sheet #${index + 1} (${mat.name}: ${mat.length} x ${mat.width} mm)</h4>
+                    <div class="sheet-stats">
+                        <span>📊 Material Utilization: <strong>${utilization}%</strong></span>
+                        <span>🗑️ Waste: <strong>${waste}%</strong></span>
+                    </div>
+                `;
+                
+                let board = document.createElement("div");
+                board.className = "raw-material-board";
+                board.style.width = boardMaxW + "px";
+                board.style.height = boardMaxH + "px";
+                sheetDiv.appendChild(board);
+
+                let recBox = document.createElement("div");
+                recBox.className = "recommendation-box";
+                sheetDiv.appendChild(recBox);
+                container.appendChild(sheetDiv);
+
+                // Kalkulasi ruang kosong (di dalam area kerja yang sudah dikurangi border)
+                let emptyRects = [{x: bScale, y: bScale, w: boardMaxW - (2*bScale), h: boardMaxH - (2*bScale)}];
+                sheet.parts.forEach(p => {
+                    let nextEmpty = [];
+                    emptyRects.forEach(r => {
+                        if (p.x < r.x + r.w && p.x + p.w > r.x && p.y < r.y + r.h && p.y + p.h > r.y) {
+                            if (r.y < p.y) nextEmpty.push({x: r.x, y: r.y, w: r.w, h: p.y - r.y});
+                            if (r.y + r.h > p.y + p.h) nextEmpty.push({x: r.x, y: p.y + p.h, w: r.w, h: (r.y + r.h) - (p.y + p.h)});
+                            if (r.x < p.x) {
+                                let ty = Math.max(r.y, p.y);
+                                let by = Math.min(r.y + r.h, p.y + p.h);
+                                nextEmpty.push({x: r.x, y: ty, w: p.x - r.x, h: by - ty});
+                            }
+                            if (r.x + r.w > p.x + p.w) {
+                                let ty = Math.max(r.y, p.y);
+                                let by = Math.min(r.y + r.h, p.y + p.h);
+                                nextEmpty.push({x: p.x + p.w, y: ty, w: (r.x + r.w) - (p.x + p.w), h: by - ty});
+                            }
+                        } else {
+                            nextEmpty.push(r);
+                        }
+                    });
+                    emptyRects = nextEmpty;
+                });
+
+                // Filter hanya ruang sisa yang bisa memuat fabrikasi part
+                let validRects = emptyRects.filter(r => canFitAnyPart(r.w, r.h));
+
+                if (validRects.length > 0) {
+                    // PIXEL PERFECT CANVAS
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = Math.ceil(boardMaxW);
+                    tempCanvas.height = Math.ceil(boardMaxH);
+                    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+                    tempCtx.fillStyle = "#fff";
+                    tempCtx.beginPath();
+                    validRects.forEach(r => tempCtx.rect(r.x, r.y, r.w, r.h));
+                    tempCtx.fill();
+                    
+                    let imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
+                    let whitePixels = 0;
+                    for (let i = 0; i < imgData.length; i += 4) { if (imgData[i] > 0) whitePixels++; }
+                    
+                    let totalUsableAreaMm2 = whitePixels / (scale * scale);
+                    let maxPossibleRemaining = totalSheetArea - usedArea;
+                    if (totalUsableAreaMm2 > maxPossibleRemaining) totalUsableAreaMm2 = maxPossibleRemaining;
+
+                    // GAMBAR ORGANIC SHAPE (Warna Hijau)
+                    const canvas = document.createElement('canvas');
+                    canvas.width = boardMaxW;
+                    canvas.height = boardMaxH;
+                    canvas.style.position = 'absolute';
+                    canvas.style.top = '0';
+                    canvas.style.left = '0';
+                    canvas.style.zIndex = '1'; 
+                    board.appendChild(canvas);
+                    const ctx = canvas.getContext('2d');
+                    
+                    ctx.fillStyle = "rgba(46, 204, 113, 0.25)";
+                    ctx.beginPath();
+                    validRects.forEach(r => ctx.rect(r.x, r.y, r.w, r.h));
+                    ctx.fill();
+
+                    ctx.save();
+                    ctx.beginPath();
+                    validRects.forEach(r => ctx.rect(r.x, r.y, r.w, r.h));
+                    ctx.clip(); 
+                    ctx.strokeStyle = "#2ecc71";
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeRect(0, 0, boardMaxW, boardMaxH); 
+                    sheet.parts.forEach(p => ctx.strokeRect(p.x, p.y, p.w, p.h));
+                    ctx.restore();
+
+                    // Teks USABLE AREA
+                    let largestRect = null;
+                    let maxArea = 0;
+                    validRects.forEach(r => {
+                        let a = r.w * r.h;
+                        if (a > maxArea) { maxArea = a; largestRect = r; }
+                    });
+                    
+                    if (largestRect && maxArea > (1000 * scale)) {
+                        const labelDiv = document.createElement("div");
+                        labelDiv.style.position = "absolute";
+                        labelDiv.style.left = largestRect.x + "px";
+                        labelDiv.style.top = largestRect.y + "px";
+                        labelDiv.style.width = largestRect.w + "px";
+                        labelDiv.style.height = largestRect.h + "px";
+                        labelDiv.style.display = "flex";
+                        labelDiv.style.alignItems = "center";
+                        labelDiv.style.justifyContent = "center";
+                        labelDiv.style.color = "#2ecc71";
+                        labelDiv.style.fontSize = "11px";
+                        labelDiv.style.fontWeight = "bold";
+                        labelDiv.style.textAlign = "center";
+                        labelDiv.style.zIndex = '3';
+                        labelDiv.innerHTML = `USABLE REMAINING AREA<br/>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²`;
+                        board.appendChild(labelDiv);
+                    }
+
+                    // FORECASTING TEXT
+                    let usablePercentage = ((totalUsableAreaMm2 / totalSheetArea) * 100).toFixed(1);
+                    let recommendations = [];
+                    for (let fin in partsDatabase) {
+                        let p = partsDatabase[fin];
+                        let partArea = (p.l + margin) * (p.w + margin);
+                        let possibleCount = Math.floor(totalUsableAreaMm2 / partArea);
+                        if (possibleCount > 0) recommendations.push(`Up to <strong>${possibleCount} unit(s)</strong> of <strong>${fin}</strong>`);
+                    }
+
+                    if (recommendations.length > 0) {
+                        recBox.innerHTML = `<h4 style="color:#2ecc71; margin-top:0;">💡 Sheet #${index + 1} Forecasting & Offcut Analysis:</h4>
+                            <p style="margin-bottom:8px; color:#a3e4d7;">Total Usable Remaining Area: <strong>${Math.round(totalUsableAreaMm2).toLocaleString()} mm²</strong> (${usablePercentage}% of sheet)</p>
+                            <div class="rec-section">Based on total remaining area, it can potentially be used for:
+                            <ul><li>${recommendations.slice(0, 6).join("</li><li>")}</li></ul></div>`;
+                    }
+                } else {
+                    recBox.innerHTML = `<p style="color:#e74c3c; margin:0; padding: 5px;">⚠️ Remaining area on this sheet is categorized as <strong>WASTE</strong>. Dimensions are too small for part fabrication.</p>`;
+                }
+
+                // Render Elemen Part Divs
+                sheet.parts.forEach(p => {
+                    const partData = partsDatabase[p.fin];
+                    const cutArea = document.createElement("div");
+                    cutArea.className = "cut-area";
+                    cutArea.style.width = p.w + "px";
+                    cutArea.style.height = p.h + "px";
+                    cutArea.style.left = p.x + "px";
+                    cutArea.style.top = p.y + "px";
+                    cutArea.style.padding = ((margin / 2) * scale) + "px";
+                    cutArea.style.zIndex = '2'; 
+
+                    const actualPart = document.createElement("div");
+                    actualPart.className = "actual-part";
+                    actualPart.style.backgroundColor = p.color;
+                    
+                    let rotText = p.isRotated ? `<span style="color:#f1c40f; font-size:9px;">(Rotated 90°)</span>` : "";
+                    let displayLength = p.isRotated ? partData.w : partData.l;
+                    let displayWidth = p.isRotated ? partData.l : partData.w;
+                    
+                    actualPart.innerHTML = `<strong>${p.fin}</strong><br/>${displayLength}x${displayWidth}<br/>${rotText}`;
+                    cutArea.appendChild(actualPart);
+                    board.appendChild(cutArea);
+                });
+            });
+
+            document.getElementById("board-info").innerText = `Optimization completed! Blueprint generated for ${sheets.length} sheet(s).`;
+            document.getElementById("btn-download").style.display = "block";
+        }
+
+        // --- PDF GENERATOR LOGIC ---
         function downloadPDFReport() {
-            // Logika html2pdf akan merender layout tabel dan visual untuk dicetak
-            alert("Memulai kompilasi dokumen PDF dengan jsPDF...");
+            const element = document.getElementById('sheets-container');
+            if (element.innerHTML.trim() === "") {
+                return alert("No nesting results available to export!");
+            }
+            
+            // Konfigurasi untuk HTML2PDF (Mengekspor layout visual menjadi PDF presisi)
+            const opt = {
+                margin:       [0.5, 0.5, 0.5, 0.5],
+                filename:     'TJK_Composite_Blueprint.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
+            };
+            
+            html2pdf().set(opt).from(element).save();
         }
 
         window.onload = loadData;
